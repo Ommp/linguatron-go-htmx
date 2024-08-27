@@ -38,6 +38,7 @@ func main() {
 
 	http.HandleFunc("/", HomeHandler)
 	http.HandleFunc("/create-deck", CreateDeckHandler)
+	http.HandleFunc("/decks", DecksHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 	fmt.Println("Server starting at :8080")
 	http.ListenAndServe(":8080", nil)
@@ -83,6 +84,32 @@ func CreateDeckHandler(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
 	}
 
+}
+
+func DecksHandler(writer http.ResponseWriter, request *http.Request) {
+	displayDecks := func() {
+		tmpl, _ := template.ParseFiles("./templates/decks.html")
+		decks, err := selectAllDecks(db)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		data := struct {
+			Title string
+			Decks []models.Deck
+		}{
+			Title: "List of Decks",
+			Decks: decks,
+		}
+		tmpl.Execute(writer, data)
+	}
+
+	switch request.Method {
+	case "GET":
+		displayDecks()
+	default:
+		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
+	}
 }
 
 // possible values from stage: learning, review
