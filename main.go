@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strconv"
 	"text/template"
 	"time"
 
@@ -39,6 +40,7 @@ func main() {
 	http.HandleFunc("/", HomeHandler)
 	http.HandleFunc("/create-deck", CreateDeckHandler)
 	http.HandleFunc("/decks", DecksHandler)
+	http.HandleFunc("/create-card", CreateCardHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 	fmt.Println("Server starting at :8080")
 	http.ListenAndServe(":8080", nil)
@@ -72,6 +74,57 @@ func CreateDeckHandler(writer http.ResponseWriter, request *http.Request) {
 		insertDeck(db, deckName)
 
 		fmt.Fprintf(writer, "<div id='result'>Deck '%s' created successfully!</div>", deckName)
+
+	}
+
+	switch request.Method {
+	case "GET":
+		displayForm()
+	case "POST":
+		processForm()
+	default:
+		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
+	}
+
+}
+
+func CreateCardHandler(writer http.ResponseWriter, request *http.Request) {
+	displayForm := func() {
+		tmpl, _ := template.ParseFiles("./templates/create_card.html")
+		decks, err := selectAllDecks(db)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		data := struct {
+			Title   string
+			Heading string
+			Message string
+			Decks   []models.Deck
+		}{
+			Title:   "Card creation",
+			Heading: "Create a card",
+			Message: "A card needs a question and an answer",
+			Decks:   decks,
+		}
+		tmpl.Execute(writer, data)
+	}
+	processForm := func() {
+		err := request.ParseForm()
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		deckID, err := strconv.ParseInt(request.FormValue("deck-id"), 10, 64)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		question := request.FormValue("question")
+		answer := request.FormValue("answer")
+		insertCard(db, deckID, question, answer, time.Now().UTC().String())
+
+		fmt.Fprintf(writer, "<div id='result'>Card with question '%s' and answer '%s' created successfully!</div>", question, answer)
 
 	}
 
@@ -184,7 +237,7 @@ func deleteDeck(db *sql.DB, deckID int) error {
 	return err
 }
 
-func insertCard(db *sql.DB, deckID int, question, answer, cardCreated string) error {
+func insertCard(db *sql.DB, deckID int64, question, answer, cardCreated string) error {
 	_, err := db.Exec("INSERT INTO cards (deck_id, question, answer, card_created) VALUES (?, ?, ?, ?)", deckID, question, answer, cardCreated)
 	return err
 }

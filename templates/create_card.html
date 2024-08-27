@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}}</title>
+     <script src="../static/htmx.min.js"></script>
+</head>
+<body>
+    <h1>{{.Heading}}</h1>
+    <p>{{.Message}}</p>
+    <form action="/create-card" method="post" hx-post="/create-card" hx-target="#result" hx-swap="outerHTML">
+        <label for="Deck">List of Decks</label>
+        <select name="deck-id" id="Decks" required>
+             {{range .Decks}}
+            <option value="{{.DeckID}}">{{.Deckname}}</option>
+            {{end}}
+        </select>
+        <label for="question">question</label>
+        <input type="text" name="question" id="question" required>
+        <label for="answer">answer</label>
+        <input type="text" name="answer" id="answer" required>
+        <button type="submit">Submit</button>
+    </form>
+    <div id="result"></div>
+</body>
+</html>
