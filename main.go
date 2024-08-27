@@ -13,10 +13,36 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+var db *sql.DB
+
 func startMessage() string {
 	return "Starting app..."
 }
 
+func main() {
+	fmt.Println(startMessage())
+
+	var err error
+	db, err = sql.Open("sqlite3", "db.sqlite")
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = db.Exec("PRAGMA journal_mode = WAL")
+	if err != nil {
+		panic(err)
+	}
+
+	createCardsTable(db)
+	createDecksTable(db)
+
+	http.HandleFunc("/", HomeHandler)
+	http.HandleFunc("/create-deck", CreateDeckHandler)
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
+	fmt.Println("Server starting at :8080")
+	http.ListenAndServe(":8080", nil)
+
+}
 func HomeHandler(writer http.ResponseWriter, request *http.Request) {
 	writer.Write([]byte("Welcome to Linguatron!"))
 }
@@ -42,12 +68,6 @@ func CreateDeckHandler(writer http.ResponseWriter, request *http.Request) {
 			return
 		}
 		deckName := request.FormValue("deckname")
-
-		db, err := sql.Open("sqlite3", "db.sqlite")
-		if err != nil {
-			panic(err)
-		}
-		defer db.Close()
 		insertDeck(db, deckName)
 
 		fmt.Fprintf(writer, "<div id='result'>Deck '%s' created successfully!</div>", deckName)
@@ -62,31 +82,6 @@ func CreateDeckHandler(writer http.ResponseWriter, request *http.Request) {
 	default:
 		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
 	}
-
-}
-
-func main() {
-	fmt.Println(startMessage())
-
-	db, err := sql.Open("sqlite3", "db.sqlite")
-	if err != nil {
-		panic(err)
-	}
-	defer db.Close()
-
-	_, err = db.Exec("PRAGMA journal_mode = WAL")
-	if err != nil {
-		panic(err)
-	}
-
-	createCardsTable(db)
-	createDecksTable(db)
-
-	http.HandleFunc("/", HomeHandler)
-	http.HandleFunc("/create-deck", CreateDeckHandler)
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
-	fmt.Println("Server starting at :8080")
-	http.ListenAndServe(":8080", nil)
 
 }
 
