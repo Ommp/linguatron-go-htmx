@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}}</title>
+     <script src="../static/htmx.min.js"></script>
+</head>
+<body>
+
+    
+    
+
+    <h1>Learning session for {{.Deck.Deckname}}</h1>
+    <h2>Testing list of Cards:</h2>
+    <label for="mode">Input mode</label>
+    <button name="mode">Typing</button>
+    <form action="/learning" method="post" hx-post="/answer-card">
+    <input type="text" name="answer" id="answer">
+    </form>
+    {{range .Cards}}
+    <div>Question: {{.Question}}</div>
+    {{end}}
+
+</body>
+</html>

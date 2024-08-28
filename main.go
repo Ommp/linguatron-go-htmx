@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"text/template"
 	"time"
 
@@ -40,6 +41,7 @@ func main() {
 	http.HandleFunc("/", HomeHandler)
 	http.HandleFunc("/create-deck", CreateDeckHandler)
 	http.HandleFunc("/decks", DecksHandler)
+	http.HandleFunc("/learning/", LearningHandler)
 	http.HandleFunc("/create-card", CreateCardHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 	fmt.Println("Server starting at :8080")
@@ -82,6 +84,51 @@ func CreateDeckHandler(writer http.ResponseWriter, request *http.Request) {
 		displayForm()
 	case "POST":
 		processForm()
+	default:
+		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
+	}
+
+}
+
+func LearningHandler(writer http.ResponseWriter, request *http.Request) {
+	//create string without /learning/ from the URL path
+	IDString := strings.TrimPrefix(request.URL.Path, "/learning/")
+	id, err := strconv.Atoi(IDString)
+	if err != nil {
+		http.Error(writer, "Invalid deck ID", http.StatusBadRequest)
+	}
+	deck, err := selectDeckByID(db, id)
+	if err != nil {
+		http.Error(writer, "Couldn't find a deck with that ID in database", http.StatusBadRequest)
+	}
+	cards, err := selectLearningCardsByDeckID(db, id)
+	if err != nil {
+		http.Error(writer, "Error selecting cards by deck id: "+err.Error(), http.StatusBadRequest)
+	}
+
+	displayCards := func() {
+		tmpl, _ := template.ParseFiles("./templates/learn.html")
+		data := struct {
+			Title   string
+			Heading string
+			Message string
+			Deck    models.Deck
+			Cards   []models.Card
+		}{
+			Title:   "Learning session for " + deck.Deckname,
+			Heading: "Create a deck",
+			Message: "All you need to create a deck is a deck name. Duplicate deck names are allowed.",
+			Deck:    deck,
+			Cards:   cards,
+		}
+		tmpl.Execute(writer, data)
+	}
+
+	switch request.Method {
+	case "GET":
+		displayCards()
+	// case "POST":
+	// 	processAnswers()
 	default:
 		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
 	}
@@ -330,9 +377,15 @@ func updateLearningCard(db *sql.DB, cardID int, correctAnswer bool) error {
 	if err != nil {
 		return err
 	}
-	//TODO add stage logic
+
 	if correctAnswer {
-		_, err = stmt.Exec(card.Correct+1, card.Incorrect, getNextEaseLevel(card.Ease, 2), card.Stage, createNextReviewDueDate(getNextEaseLevel(card.Ease, 2)), time.Now().UTC().String(), cardID)
+		//If ease is more than 1 and card is answered correctly, make the stage review
+		if card.Ease > 1 {
+			_, err = stmt.Exec(card.Correct+1, card.Incorrect, getNextEaseLevel(card.Ease, 2), "review", createNextReviewDueDate(getNextEaseLevel(card.Ease, 2)), time.Now().UTC().String(), cardID)
+		} else {
+			_, err = stmt.Exec(card.Correct+1, card.Incorrect, getNextEaseLevel(card.Ease, 2), card.Stage, createNextReviewDueDate(getNextEaseLevel(card.Ease, 2)), time.Now().UTC().String(), cardID)
+		}
+
 	} else {
 		_, err = stmt.Exec(card.Correct, card.Incorrect+1, 1, card.Stage, time.Now().UTC().String(), time.Now().UTC().String(), cardID)
 	}
