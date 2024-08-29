@@ -5,22 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}}</title>
      <script src="../static/htmx.min.js"></script>
+     <script src="../static/alpine.min.js" defer></script>
+     <link rel="stylesheet" href="../static/style.css">
 </head>
 <body>
-
-    
     
 
     <h1>Learning session for {{.Deck.Deckname}}</h1>
     <h2>Testing list of Cards:</h2>
     <label for="mode">Input mode</label>
     <button name="mode">Typing</button>
-    <form action="/learning" method="post" hx-post="/answer-card">
+        <h1>Question: {{.Card.Question}}</h1>
+    <form action="/learning" method="post" hx-post="/typed-answer">
+    <input type="hidden" name="card-id" value="{{.Card.CardID}}">
+    <label for="answer">Answer</label>
     <input type="text" name="answer" id="answer">
     </form>
-    {{range .Cards}}
+    <!-- {{range .Cards}}
     <div>Question: {{.Question}}</div>
-    {{end}}
+    {{end}} -->
+
 
 </body>
 </html>

@@ -43,6 +43,7 @@ func main() {
 	http.HandleFunc("/decks", DecksHandler)
 	http.HandleFunc("/learning/", LearningHandler)
 	http.HandleFunc("/create-card", CreateCardHandler)
+	http.HandleFunc("/typed-answer", TypedAnswerHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 	fmt.Println("Server starting at :8080")
 	http.ListenAndServe(":8080", nil)
@@ -90,6 +91,49 @@ func CreateDeckHandler(writer http.ResponseWriter, request *http.Request) {
 
 }
 
+func IsAnswerCorrectInLowerCase(userAnswer string, databaseAnswer string) bool {
+	return strings.ToLower(userAnswer) == strings.ToLower(databaseAnswer)
+}
+
+func TypedAnswerHandler(writer http.ResponseWriter, request *http.Request) {
+
+	processAnswer := func() {
+		err := request.ParseForm()
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		userAnswer := request.FormValue("answer")
+		cardID, err := strconv.ParseInt(request.FormValue("card-id"), 10, 64)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		card, err := selectCardByCardID(db, int(cardID))
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if IsAnswerCorrectInLowerCase(userAnswer, card.Answer) {
+			updateLearningCard(db, card.CardID, true)
+		} else {
+			updateLearningCard(db, card.CardID, false)
+			fmt.Fprintf(writer, `<div id='result'>Incorrect answer. Your answer was "%s", correct answer is "%s" </div>`, userAnswer, card.Answer)
+		}
+
+	}
+
+	switch request.Method {
+	case "POST":
+		processAnswer()
+	default:
+		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
+	}
+}
+
 func LearningHandler(writer http.ResponseWriter, request *http.Request) {
 	//create string without /learning/ from the URL path
 	IDString := strings.TrimPrefix(request.URL.Path, "/learning/")
@@ -106,6 +150,40 @@ func LearningHandler(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, "Error selecting cards by deck id: "+err.Error(), http.StatusBadRequest)
 	}
 
+	getMostDueLearningCard := func() (models.Card, error) {
+		timeLayout := "2006-01-02 15:04:05.000000000 +0000 UTC"
+		var mostDueCard models.Card
+
+		if len(cards) > 0 {
+
+			mostDueCardTime, err := time.Parse(timeLayout, cards[0].ReviewDueDate)
+			if err != nil {
+				return models.Card{}, err
+			}
+
+			for i := 0; i < len(cards); i++ {
+				currentCardDueDate, err := time.Parse(timeLayout, cards[i].ReviewDueDate)
+				if err != nil {
+					return models.Card{}, err
+				}
+				if currentCardDueDate.After(mostDueCardTime) {
+					mostDueCardTime = currentCardDueDate
+					mostDueCard = cards[i]
+				}
+
+			}
+			return mostDueCard, err
+		} else {
+			return models.Card{}, err
+		}
+
+	}
+
+	card, err := getMostDueLearningCard()
+	if err != nil {
+		http.Error(writer, "Error selecting card by deck id: "+err.Error(), http.StatusBadRequest)
+	}
+
 	displayCards := func() {
 		tmpl, _ := template.ParseFiles("./templates/learn.html")
 		data := struct {
@@ -114,12 +192,14 @@ func LearningHandler(writer http.ResponseWriter, request *http.Request) {
 			Message string
 			Deck    models.Deck
 			Cards   []models.Card
+			Card    models.Card
 		}{
 			Title:   "Learning session for " + deck.Deckname,
 			Heading: "Create a deck",
 			Message: "All you need to create a deck is a deck name. Duplicate deck names are allowed.",
 			Deck:    deck,
 			Cards:   cards,
+			Card:    card,
 		}
 		tmpl.Execute(writer, data)
 	}
@@ -285,7 +365,7 @@ func deleteDeck(db *sql.DB, deckID int) error {
 }
 
 func insertCard(db *sql.DB, deckID int64, question, answer, cardCreated string) error {
-	_, err := db.Exec("INSERT INTO cards (deck_id, question, answer, card_created) VALUES (?, ?, ?, ?)", deckID, question, answer, cardCreated)
+	_, err := db.Exec("INSERT INTO cards (deck_id, question, answer, card_created, review_due_date) VALUES (?, ?, ?, ?, ?)", deckID, question, answer, cardCreated, time.Now().UTC().String())
 	return err
 }
 
