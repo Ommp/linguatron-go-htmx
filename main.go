@@ -108,21 +108,36 @@ func TypedAnswerHandler(writer http.ResponseWriter, request *http.Request) {
 		cardID, err := strconv.ParseInt(request.FormValue("card-id"), 10, 64)
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
-			return
 		}
 
 		card, err := selectCardByCardID(db, int(cardID))
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
-			return
 		}
 
 		if IsAnswerCorrectInLowerCase(userAnswer, card.Answer) {
 			updateLearningCard(db, card.CardID, true)
 		} else {
 			updateLearningCard(db, card.CardID, false)
-			fmt.Fprintf(writer, `<div id='result'>Incorrect answer. Your answer was "%s", correct answer is "%s" </div>`, userAnswer, card.Answer)
+			// fmt.Fprintf(writer, `<div id='result'>Incorrect answer. Your answer was "%s", correct answer is "%s" </div>`, userAnswer, card.Answer)
 		}
+		cards, err := selectLearningCardsByDeckID(db, card.DeckID)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+		}
+		newQuestion, err := getMostDueCard(cards)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+		}
+		fmt.Fprintf(writer, `
+	<div id="content">
+    <h1>Question: %s</h1>
+    <form action="/learning" method="post" hx-post="/typed-answer" hx-target="#content" hx-swap="outerHTML">
+	<input type="hidden" name="card-id" value="%d">
+        <label for="answer">Answer</label>
+        <input type="text" name="answer" id="answer">
+    </form>
+    `, newQuestion.Question, newQuestion.CardID)
 
 	}
 
@@ -132,6 +147,41 @@ func TypedAnswerHandler(writer http.ResponseWriter, request *http.Request) {
 	default:
 		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
 	}
+}
+
+func getMostDueCard(cards []models.Card) (models.Card, error) {
+	// timeLayout := "2024-08-30T12:57:22.141705535Z"
+	var mostDueCard models.Card
+	if len(cards) > 0 {
+		mostDueCard = cards[0]
+	}
+
+	if len(cards) > 1 {
+		mostDueCardTime, err := time.Parse(time.RFC3339Nano, cards[0].ReviewDueDate)
+		if err != nil {
+			fmt.Print(err.Error())
+			return models.Card{}, err
+		}
+
+		for i := 0; i < len(cards); i++ {
+			currentCardDueDate, err := time.Parse(time.RFC3339Nano, cards[i].ReviewDueDate)
+			if err != nil {
+				fmt.Print(err.Error())
+				return models.Card{}, err
+			}
+			if currentCardDueDate.Before(mostDueCardTime) {
+				mostDueCardTime = currentCardDueDate
+				mostDueCard = cards[i]
+			}
+
+		}
+		return mostDueCard, err
+	} else if len(cards) == 1 {
+		return mostDueCard, nil
+	} else {
+		return models.Card{}, fmt.Errorf("no cards")
+	}
+
 }
 
 func LearningHandler(writer http.ResponseWriter, request *http.Request) {
@@ -150,36 +200,7 @@ func LearningHandler(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, "Error selecting cards by deck id: "+err.Error(), http.StatusBadRequest)
 	}
 
-	getMostDueLearningCard := func() (models.Card, error) {
-		timeLayout := "2006-01-02 15:04:05.000000000 +0000 UTC"
-		var mostDueCard models.Card
-
-		if len(cards) > 0 {
-
-			mostDueCardTime, err := time.Parse(timeLayout, cards[0].ReviewDueDate)
-			if err != nil {
-				return models.Card{}, err
-			}
-
-			for i := 0; i < len(cards); i++ {
-				currentCardDueDate, err := time.Parse(timeLayout, cards[i].ReviewDueDate)
-				if err != nil {
-					return models.Card{}, err
-				}
-				if currentCardDueDate.After(mostDueCardTime) {
-					mostDueCardTime = currentCardDueDate
-					mostDueCard = cards[i]
-				}
-
-			}
-			return mostDueCard, err
-		} else {
-			return models.Card{}, err
-		}
-
-	}
-
-	card, err := getMostDueLearningCard()
+	card, err := getMostDueCard(cards)
 	if err != nil {
 		http.Error(writer, "Error selecting card by deck id: "+err.Error(), http.StatusBadRequest)
 	}
@@ -245,11 +266,17 @@ func CreateCardHandler(writer http.ResponseWriter, request *http.Request) {
 		deckID, err := strconv.ParseInt(request.FormValue("deck-id"), 10, 64)
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
-			return
+
 		}
 		question := request.FormValue("question")
 		answer := request.FormValue("answer")
-		insertCard(db, deckID, question, answer, time.Now().UTC().String())
+
+		t, err := time.Now().UTC().MarshalText()
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+		}
+
+		insertCard(db, deckID, question, answer, string(t))
 
 		fmt.Fprintf(writer, "<div id='result'>Card with question '%s' and answer '%s' created successfully!</div>", question, answer)
 
@@ -365,8 +392,12 @@ func deleteDeck(db *sql.DB, deckID int) error {
 }
 
 func insertCard(db *sql.DB, deckID int64, question, answer, cardCreated string) error {
-	_, err := db.Exec("INSERT INTO cards (deck_id, question, answer, card_created, review_due_date) VALUES (?, ?, ?, ?, ?)", deckID, question, answer, cardCreated, time.Now().UTC().String())
-	return err
+	t, err := time.Now().UTC().MarshalText()
+	if err != nil {
+		return err
+	}
+	_, err1 := db.Exec("INSERT INTO cards (deck_id, question, answer, card_created, review_due_date) VALUES (?, ?, ?, ?, ?)", deckID, question, answer, cardCreated, t)
+	return err1
 }
 
 func deleteCard(db *sql.DB, cardID int) error {
@@ -458,16 +489,31 @@ func updateLearningCard(db *sql.DB, cardID int, correctAnswer bool) error {
 		return err
 	}
 
+	now, err := time.Now().UTC().MarshalText()
+	if err != nil {
+		return err
+	}
+
+	minuteAfter, err := time.Now().UTC().Add(time.Minute * time.Duration(1)).MarshalText()
+	if err != nil {
+		return err
+	}
+
+	dayAfter, err := time.Now().UTC().Add(time.Hour * time.Duration(24)).MarshalText()
+	if err != nil {
+		return err
+	}
+
 	if correctAnswer {
-		//If ease is more than 1 and card is answered correctly, make the stage review
+		//If ease is more than 1 and card is answered correctly, set stage to review
 		if card.Ease > 1 {
-			_, err = stmt.Exec(card.Correct+1, card.Incorrect, getNextEaseLevel(card.Ease, 2), "review", createNextReviewDueDate(getNextEaseLevel(card.Ease, 2)), time.Now().UTC().String(), cardID)
+			_, err = stmt.Exec(card.Correct+1, card.Incorrect, getNextEaseLevel(card.Ease, 1), "review", dayAfter, now, cardID)
 		} else {
-			_, err = stmt.Exec(card.Correct+1, card.Incorrect, getNextEaseLevel(card.Ease, 2), card.Stage, createNextReviewDueDate(getNextEaseLevel(card.Ease, 2)), time.Now().UTC().String(), cardID)
+			_, err = stmt.Exec(card.Correct+1, card.Incorrect, getNextEaseLevel(card.Ease, 2), card.Stage, minuteAfter, now, cardID)
 		}
 
 	} else {
-		_, err = stmt.Exec(card.Correct, card.Incorrect+1, 1, card.Stage, time.Now().UTC().String(), time.Now().UTC().String(), cardID)
+		_, err = stmt.Exec(card.Correct, card.Incorrect+1, 1, card.Stage, minuteAfter, now, cardID)
 	}
 
 	return err
@@ -506,6 +552,13 @@ func getNextEaseLevel(currentEase int, growthfactor float64) int {
 }
 
 func createNextReviewDueDate(ease int) string {
+
 	t := time.Now().UTC()
-	return t.Add(time.Duration(ease) * 24 * time.Hour).String()
+	t = t.Add(time.Duration(ease) * 24 * time.Hour)
+
+	formattedTime, err := t.MarshalText()
+	if err != nil {
+		fmt.Print(err.Error())
+	}
+	return string(formattedTime)
 }
