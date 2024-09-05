@@ -2,12 +2,13 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"html/template"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
-	"text/template"
 	"time"
 
 	"linguatron/models"
@@ -42,6 +43,7 @@ func main() {
 	http.HandleFunc("/create-deck", CreateDeckHandler)
 	http.HandleFunc("/decks", DecksHandler)
 	http.HandleFunc("/learning/", LearningHandler)
+	http.HandleFunc("/deck/", DeckHandler)
 	http.HandleFunc("/create-card", CreateCardHandler)
 	http.HandleFunc("/typed-answer", TypedAnswerHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
@@ -101,7 +103,6 @@ func TypedAnswerHandler(writer http.ResponseWriter, request *http.Request) {
 		err := request.ParseForm()
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
-			return
 		}
 
 		userAnswer := request.FormValue("answer")
@@ -125,19 +126,38 @@ func TypedAnswerHandler(writer http.ResponseWriter, request *http.Request) {
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
 		}
-		newQuestion, err := getMostDueCard(cards)
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
+
+		if len(cards) > 0 {
+			newQuestion, err := getMostDueCard(cards)
+			if err != nil {
+				http.Error(writer, err.Error(), http.StatusInternalServerError)
+			}
+			tmpl, err := template.ParseFiles("./templates/htmx/typedanswer.html")
+			if err != nil {
+				http.Error(writer, "Error loading template", http.StatusInternalServerError)
+				return
+			}
+
+			err = tmpl.Execute(writer, newQuestion)
+			if err != nil {
+				http.Error(writer, "Error executing template", http.StatusInternalServerError)
+			}
+		} else {
+			data := struct {
+				Message string
+			}{
+				Message: "No learning cards left for this deck. Create some new cards ",
+			}
+			fmt.Print("no learning cards left")
+			fmt.Print(cards)
+			tmpl, err1 := template.ParseFiles("./templates/htmx/nocards.html")
+			if err1 != nil {
+				fmt.Print(err1)
+				http.Error(writer, fmt.Sprintf("Error loading template %v", err1), http.StatusInternalServerError)
+			}
+
+			tmpl.Execute(writer, data)
 		}
-		fmt.Fprintf(writer, `
-	<div id="content">
-    <h1>Question: %s</h1>
-    <form action="/learning" method="post" hx-post="/typed-answer" hx-target="#content" hx-swap="outerHTML">
-	<input type="hidden" name="card-id" value="%d">
-        <label for="answer">Answer</label>
-        <input type="text" name="answer" id="answer">
-    </form>
-    `, newQuestion.Question, newQuestion.CardID)
 
 	}
 
@@ -184,6 +204,51 @@ func getMostDueCard(cards []models.Card) (models.Card, error) {
 
 }
 
+func DeckHandler(writer http.ResponseWriter, request *http.Request) {
+	//create string without /learning/ from the URL path
+	IDString := strings.TrimPrefix(request.URL.Path, "/deck/")
+	id, err := strconv.Atoi(IDString)
+	if err != nil {
+		http.Error(writer, "Invalid deck ID", http.StatusBadRequest)
+	}
+	deck, err := selectDeckByID(db, id)
+	if err != nil {
+		http.Error(writer, "Couldn't find a deck with that ID in database", http.StatusBadRequest)
+	}
+	cards, err := selectAllCardsByDeckID(db, id)
+	if err != nil {
+		http.Error(writer, "Error selecting cards by deck id: "+err.Error(), http.StatusBadRequest)
+	}
+
+	cardsJSON, err := json.Marshal(cards)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	displayCards := func() {
+		tmpl, _ := template.ParseFiles("./templates/deck.html")
+		data := struct {
+			Title string
+			Deck  models.Deck
+			Cards template.JS
+		}{
+			Title: "Deck " + deck.Deckname,
+			Deck:  deck,
+			Cards: template.JS(cardsJSON),
+		}
+		tmpl.Execute(writer, data)
+	}
+
+	switch request.Method {
+	case "GET":
+		displayCards()
+	default:
+		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
+	}
+
+}
+
 func LearningHandler(writer http.ResponseWriter, request *http.Request) {
 	//create string without /learning/ from the URL path
 	IDString := strings.TrimPrefix(request.URL.Path, "/learning/")
@@ -205,22 +270,32 @@ func LearningHandler(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, "Error selecting card by deck id: "+err.Error(), http.StatusBadRequest)
 	}
 
+	var cardAvailable bool
+
+	if len(cards) > 0 {
+		cardAvailable = true
+	} else {
+		cardAvailable = false
+	}
+
 	displayCards := func() {
 		tmpl, _ := template.ParseFiles("./templates/learn.html")
 		data := struct {
-			Title   string
-			Heading string
-			Message string
-			Deck    models.Deck
-			Cards   []models.Card
-			Card    models.Card
+			Title         string
+			Heading       string
+			Message       string
+			Deck          models.Deck
+			Cards         []models.Card
+			Card          models.Card
+			CardAvailable bool
 		}{
-			Title:   "Learning session for " + deck.Deckname,
-			Heading: "Create a deck",
-			Message: "All you need to create a deck is a deck name. Duplicate deck names are allowed.",
-			Deck:    deck,
-			Cards:   cards,
-			Card:    card,
+			Title:         "Learning session for " + deck.Deckname,
+			Heading:       "Create a deck",
+			Message:       "All you need to create a deck is a deck name. Duplicate deck names are allowed.",
+			Deck:          deck,
+			Cards:         cards,
+			Card:          card,
+			CardAvailable: cardAvailable,
 		}
 		tmpl.Execute(writer, data)
 	}

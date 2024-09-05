@@ -6,3 +6,7 @@ html, body {
     align-items: center;
     flex-flow: column;
 }
+
+#answer{
+    background-color: lightgray;
+}
