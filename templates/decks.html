@@ -7,12 +7,15 @@
      <script src="../static/htmx.min.js"></script>
 </head>
 <body>
+
+    <h1>Decks</h1>
+    <h3><a href="/create-deck">Create a deck</a></h3>
     <div id="decks">
  {{range .Decks}}
-        <div>{{.Deckname}}</div>
+        <a href="/deck/{{.ID}}"><div>{{.Name}}</div></a>
  {{end}}
     </div>
-    <a href="/create-deck">Create a deck</a>
+
 
 </body>
 </html>

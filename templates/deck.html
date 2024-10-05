@@ -9,18 +9,22 @@
      <link rel="stylesheet" href="../static/style.css">
 </head>
 <body>
-    <h1>{{.Deck.Deckname}}</h1>
+    <h1>{{.Deck.Name}}</h1>
+
+    <a href="/learning/{{.Deck.ID}}">Learn</a>
+    <a href="/review/{{.Deck.ID}}">Review</a>
 
 <!-- HTMX/HTML -->
     <div x-data="{ cards: {{ .Cards }} }">
         
     <template x-for="card in cards">
         <div>
-            <p x-text="card.question"></p>
-            <p x-text="card.answer"></p>
+            <p x-text="card.Question"></p>
+            <p x-text="card.Answer"></p>
         </div>
     </template>
 </div>
+
 
     
 </body>

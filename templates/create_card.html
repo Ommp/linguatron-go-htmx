@@ -13,7 +13,7 @@
         <label for="Deck">List of Decks</label>
         <select name="deck-id" id="Decks" required>
              {{range .Decks}}
-            <option value="{{.DeckID}}">{{.Deckname}}</option>
+            <option value="{{.ID}}">{{.Name}}</option>
             {{end}}
         </select>
         <label for="question">question</label>

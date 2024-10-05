@@ -1,22 +1,177 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"log"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"linguatron/models"
-
-	_ "github.com/mattn/go-sqlite3"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
-var db *sql.DB
+type Deck struct {
+	ID    uint `gorm:"primaryKey"`
+	Name  string
+	Cards []Card `gorm:"foreignKey:DeckID"`
+}
+
+type Card struct {
+	ID             uint `gorm:"primaryKey"`
+	DeckID         uint
+	Correct        uint   `gorm:"default:0"`
+	Incorrect      uint   `gorm:"default:0"`
+	CardCreated    string `gorm:"default:''"`
+	LastReviewDate string `gorm:"default:''"`
+	Stage          string `gorm:"default:'learning'"`
+	Lapses         uint   `gorm:"default:0"`
+	Ease           uint   `gorm:"default:1"`
+	ReviewDueDate  string `gorm:"default:''"`
+	Question       string
+	Answer         string
+}
+
+type Database interface {
+	createDeck(name string) error
+	createCard(card Card) error
+	getCardByID(id uint) (Card, error)
+	getAllCardsByDeckID(id uint) ([]Card, error)
+	getLearningCardsByDeckID(id uint) ([]Card, error)
+	getReviewCardsByDeckID(id uint) ([]Card, error)
+	getDeckByID(id uint) (Deck, error)
+	selectAllDecks() ([]Deck, error)
+	updateLearningCardByID(card Card) error
+	updateReviewCardByID(card Card) error
+	deleteCardByID(card Card) error
+}
+
+type GormDB struct {
+	db *gorm.DB
+}
+
+func (g *GormDB) createDeck(name string) error {
+	var deck Deck
+	deck.Name = name
+	return g.db.Create(&deck).Error
+}
+
+func (g *GormDB) createCard(card Card) error {
+	return g.db.Create(&card).Error
+}
+
+func (g *GormDB) getCardByID(id uint) (Card, error) {
+	var card Card
+	err := g.db.First(&card, id).Error
+	return card, err
+}
+
+func (g *GormDB) getAllCardsByDeckID(id uint) ([]Card, error) {
+	var cards []Card
+	err := g.db.Where("deck_id = ?", id).Find(&cards).Error
+	fmt.Print(cards)
+	return cards, err
+}
+func (g *GormDB) getLearningCardsByDeckID(id uint) ([]Card, error) {
+	var cards []Card
+	err := g.db.Where("deck_id = ? AND stage = ?", id, "learning").Find(&cards).Error
+	return cards, err
+}
+func (g *GormDB) getReviewCardsByDeckID(id uint) ([]Card, error) {
+	var cards []Card
+	err := g.db.Where("deck_id = ?, stage = ?", id, "review").Find(&cards).Error
+	return cards, err
+}
+
+func (g *GormDB) getDeckByID(id uint) (Deck, error) {
+	var deck Deck
+	err := g.db.First(&deck, id).Error
+	return deck, err
+}
+
+func (g *GormDB) selectAllDecks() ([]Deck, error) {
+	var decks []Deck
+	err := g.db.Find(&decks).Error
+	return decks, err
+}
+
+func (g *GormDB) updateLearningCardByID(id uint, correct bool) error {
+	card, err := g.getCardByID(id)
+	if err != nil {
+		return err
+	}
+
+	now, err := time.Now().UTC().MarshalText()
+	if err != nil {
+		return err
+	}
+
+	minuteAfter, err := time.Now().UTC().Add(time.Minute * time.Duration(1)).MarshalText()
+	if err != nil {
+		return err
+	}
+
+	dayAfter, err := time.Now().UTC().Add(time.Hour * time.Duration(24)).MarshalText()
+	if err != nil {
+		return err
+	}
+
+	card.LastReviewDate = string(now)
+	if correct {
+		card.Correct++
+		if card.Ease > 1 {
+			card.Ease = uint(getNextEaseLevel(int(card.Ease), 1))
+			card.Stage = "review"
+			card.ReviewDueDate = string(dayAfter)
+
+		} else {
+			card.Ease = uint(getNextEaseLevel(int(card.Ease), 2))
+			card.ReviewDueDate = string(minuteAfter)
+		}
+	} else {
+		card.Incorrect++
+		card.Ease = 1
+		card.ReviewDueDate = string(minuteAfter)
+	}
+	return g.db.Save(&card).Error
+}
+
+func (g *GormDB) updateReviewCardByID(id uint, correct bool) error {
+	card, err := g.getCardByID(id)
+	if err != nil {
+		return err
+	}
+
+	now, err := time.Now().UTC().MarshalText()
+	if err != nil {
+		return err
+	}
+
+	minuteAfter, err := time.Now().UTC().Add(time.Minute * time.Duration(1)).MarshalText()
+	if err != nil {
+		return err
+	}
+
+	card.LastReviewDate = string(now)
+	if correct {
+		card.Correct++
+		card.Ease = uint(getNextEaseLevel(int(card.Ease), 2))
+		card.ReviewDueDate = createNextReviewDueDate(getNextEaseLevel(int(card.Ease), 2))
+	} else {
+		card.Incorrect++
+		card.ReviewDueDate = string(minuteAfter)
+		if card.Ease != 1 {
+			card.Lapses++
+			card.Ease = 1
+		}
+	}
+
+	return g.db.Save(&card).Error
+}
 
 func startMessage() string {
 	return "Starting app..."
@@ -25,37 +180,43 @@ func startMessage() string {
 func main() {
 	fmt.Println(startMessage())
 
-	var err error
-	db, err = sql.Open("sqlite3", "db.sqlite")
+	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
 	if err != nil {
-		panic(err)
+		log.Fatal("failed to connect database")
 	}
 
-	_, err = db.Exec("PRAGMA journal_mode = WAL")
-	if err != nil {
-		panic(err)
-	}
+	gormDB := &GormDB{db: db}
 
-	createCardsTable(db)
-	createDecksTable(db)
+	db.AutoMigrate(&Deck{}, &Card{})
 
 	http.HandleFunc("/", HomeHandler)
-	http.HandleFunc("/create-deck", CreateDeckHandler)
-	http.HandleFunc("/decks", DecksHandler)
-	http.HandleFunc("/learning/", LearningHandler)
-	http.HandleFunc("/deck/", DeckHandler)
-	http.HandleFunc("/create-card", CreateCardHandler)
-	http.HandleFunc("/typed-answer", TypedAnswerHandler)
+	http.HandleFunc("/create-deck", gormDB.CreateDeckHandler)
+	http.HandleFunc("/decks", gormDB.DecksHandler)
+	http.HandleFunc("/learning/", gormDB.LearningHandler)
+	http.HandleFunc("/deck/", gormDB.DeckHandler)
+	http.HandleFunc("/create-card", gormDB.CreateCardHandler)
+	http.HandleFunc("/learning-answer", gormDB.LearningAnswerHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 	fmt.Println("Server starting at :8080")
 	http.ListenAndServe(":8080", nil)
 
 }
 func HomeHandler(writer http.ResponseWriter, request *http.Request) {
-	writer.Write([]byte("Welcome to Linguatron!"))
+
+	displayHome := func() {
+		tmpl, _ := template.ParseFiles("./templates/index.html")
+		tmpl.Execute(writer, nil)
+	}
+
+	switch request.Method {
+	case "GET":
+		displayHome()
+	default:
+		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
+	}
 }
 
-func CreateDeckHandler(writer http.ResponseWriter, request *http.Request) {
+func (g *GormDB) CreateDeckHandler(writer http.ResponseWriter, request *http.Request) {
 	displayForm := func() {
 		tmpl, _ := template.ParseFiles("./templates/create_deck.html")
 		data := struct {
@@ -76,7 +237,7 @@ func CreateDeckHandler(writer http.ResponseWriter, request *http.Request) {
 			return
 		}
 		deckName := request.FormValue("deckname")
-		insertDeck(db, deckName)
+		g.createDeck(deckName)
 
 		fmt.Fprintf(writer, "<div id='result'>Deck '%s' created successfully!</div>", deckName)
 
@@ -97,32 +258,36 @@ func IsAnswerCorrectInLowerCase(userAnswer string, databaseAnswer string) bool {
 	return strings.ToLower(userAnswer) == strings.ToLower(databaseAnswer)
 }
 
-func TypedAnswerHandler(writer http.ResponseWriter, request *http.Request) {
+func (g *GormDB) LearningAnswerHandler(writer http.ResponseWriter, request *http.Request) {
 
 	processAnswer := func() {
 		err := request.ParseForm()
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		userAnswer := request.FormValue("answer")
 		cardID, err := strconv.ParseInt(request.FormValue("card-id"), 10, 64)
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
-		card, err := selectCardByCardID(db, int(cardID))
+		card, err := g.getCardByID(uint(cardID))
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		if IsAnswerCorrectInLowerCase(userAnswer, card.Answer) {
-			updateLearningCard(db, card.CardID, true)
+			g.updateLearningCardByID(uint(card.ID), true)
+
 		} else {
-			updateLearningCard(db, card.CardID, false)
+			g.updateLearningCardByID(uint(card.ID), false)
 			// fmt.Fprintf(writer, `<div id='result'>Incorrect answer. Your answer was "%s", correct answer is "%s" </div>`, userAnswer, card.Answer)
 		}
-		cards, err := selectLearningCardsByDeckID(db, card.DeckID)
+		cards, err := g.getLearningCardsByDeckID(card.DeckID)
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
 		}
@@ -131,8 +296,9 @@ func TypedAnswerHandler(writer http.ResponseWriter, request *http.Request) {
 			newQuestion, err := getMostDueCard(cards)
 			if err != nil {
 				http.Error(writer, err.Error(), http.StatusInternalServerError)
+				return
 			}
-			tmpl, err := template.ParseFiles("./templates/htmx/typedanswer.html")
+			tmpl, err := template.ParseFiles("./templates/htmx/learninganswer.html")
 			if err != nil {
 				http.Error(writer, "Error loading template", http.StatusInternalServerError)
 				return
@@ -141,6 +307,7 @@ func TypedAnswerHandler(writer http.ResponseWriter, request *http.Request) {
 			err = tmpl.Execute(writer, newQuestion)
 			if err != nil {
 				http.Error(writer, "Error executing template", http.StatusInternalServerError)
+				return
 			}
 		} else {
 			data := struct {
@@ -169,9 +336,9 @@ func TypedAnswerHandler(writer http.ResponseWriter, request *http.Request) {
 	}
 }
 
-func getMostDueCard(cards []models.Card) (models.Card, error) {
+func getMostDueCard(cards []Card) (Card, error) {
 	// timeLayout := "2024-08-30T12:57:22.141705535Z"
-	var mostDueCard models.Card
+	var mostDueCard Card
 	if len(cards) > 0 {
 		mostDueCard = cards[0]
 	}
@@ -180,14 +347,14 @@ func getMostDueCard(cards []models.Card) (models.Card, error) {
 		mostDueCardTime, err := time.Parse(time.RFC3339Nano, cards[0].ReviewDueDate)
 		if err != nil {
 			fmt.Print(err.Error())
-			return models.Card{}, err
+			return Card{}, err
 		}
 
 		for i := 0; i < len(cards); i++ {
 			currentCardDueDate, err := time.Parse(time.RFC3339Nano, cards[i].ReviewDueDate)
 			if err != nil {
 				fmt.Print(err.Error())
-				return models.Card{}, err
+				return Card{}, err
 			}
 			if currentCardDueDate.Before(mostDueCardTime) {
 				mostDueCardTime = currentCardDueDate
@@ -199,23 +366,23 @@ func getMostDueCard(cards []models.Card) (models.Card, error) {
 	} else if len(cards) == 1 {
 		return mostDueCard, nil
 	} else {
-		return models.Card{}, fmt.Errorf("no cards")
+		return Card{}, fmt.Errorf("no cards")
 	}
 
 }
 
-func DeckHandler(writer http.ResponseWriter, request *http.Request) {
+func (g *GormDB) DeckHandler(writer http.ResponseWriter, request *http.Request) {
 	//create string without /learning/ from the URL path
 	IDString := strings.TrimPrefix(request.URL.Path, "/deck/")
 	id, err := strconv.Atoi(IDString)
 	if err != nil {
 		http.Error(writer, "Invalid deck ID", http.StatusBadRequest)
 	}
-	deck, err := selectDeckByID(db, id)
+	deck, err := g.getDeckByID(uint(id))
 	if err != nil {
 		http.Error(writer, "Couldn't find a deck with that ID in database", http.StatusBadRequest)
 	}
-	cards, err := selectAllCardsByDeckID(db, id)
+	cards, err := g.getAllCardsByDeckID(uint(id))
 	if err != nil {
 		http.Error(writer, "Error selecting cards by deck id: "+err.Error(), http.StatusBadRequest)
 	}
@@ -230,10 +397,10 @@ func DeckHandler(writer http.ResponseWriter, request *http.Request) {
 		tmpl, _ := template.ParseFiles("./templates/deck.html")
 		data := struct {
 			Title string
-			Deck  models.Deck
+			Deck  Deck
 			Cards template.JS
 		}{
-			Title: "Deck " + deck.Deckname,
+			Title: "Deck " + deck.Name,
 			Deck:  deck,
 			Cards: template.JS(cardsJSON),
 		}
@@ -249,18 +416,80 @@ func DeckHandler(writer http.ResponseWriter, request *http.Request) {
 
 }
 
-func LearningHandler(writer http.ResponseWriter, request *http.Request) {
+func (g *GormDB) LearningHandler(writer http.ResponseWriter, request *http.Request) {
 	//create string without /learning/ from the URL path
 	IDString := strings.TrimPrefix(request.URL.Path, "/learning/")
 	id, err := strconv.Atoi(IDString)
 	if err != nil {
 		http.Error(writer, "Invalid deck ID", http.StatusBadRequest)
+		return
 	}
-	deck, err := selectDeckByID(db, id)
+	deck, err := g.getDeckByID(uint(id))
+	if err != nil {
+		http.Error(writer, "Couldn't find a deck with that ID in database "+err.Error(), http.StatusNotFound)
+		return
+	}
+	cards, err := g.getLearningCardsByDeckID(deck.ID)
+	if err != nil {
+		http.Error(writer, "Error selecting cards by deck id: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	card, err := getMostDueCard(cards)
+	if err != nil {
+		http.Error(writer, "Error selecting card by deck id: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var cardAvailable bool
+
+	if len(cards) > 0 {
+		cardAvailable = true
+	} else {
+		cardAvailable = false
+	}
+
+	displayCards := func() {
+		tmpl, _ := template.ParseFiles("./templates/learn.html")
+		if err != nil {
+			http.Error(writer, "Error loading template: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		data := struct {
+			Title         string
+			Deck          Deck
+			Cards         []Card
+			Card          Card
+			CardAvailable bool
+		}{
+			Title:         "Learning session for " + deck.Name,
+			Deck:          deck,
+			Cards:         cards,
+			Card:          card,
+			CardAvailable: cardAvailable,
+		}
+		tmpl.Execute(writer, data)
+	}
+
+	switch request.Method {
+	case "GET":
+		displayCards()
+	default:
+		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
+	}
+
+}
+func (g *GormDB) ReviewHandler(writer http.ResponseWriter, request *http.Request) {
+	IDString := strings.TrimPrefix(request.URL.Path, "/review/")
+	id, err := strconv.Atoi(IDString)
+	if err != nil {
+		http.Error(writer, "Invalid deck ID", http.StatusBadRequest)
+	}
+	deck, err := g.getDeckByID(uint(id))
 	if err != nil {
 		http.Error(writer, "Couldn't find a deck with that ID in database", http.StatusBadRequest)
 	}
-	cards, err := selectLearningCardsByDeckID(db, id)
+	cards, err := g.getReviewCardsByDeckID(deck.ID)
 	if err != nil {
 		http.Error(writer, "Error selecting cards by deck id: "+err.Error(), http.StatusBadRequest)
 	}
@@ -279,19 +508,15 @@ func LearningHandler(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	displayCards := func() {
-		tmpl, _ := template.ParseFiles("./templates/learn.html")
+		tmpl, _ := template.ParseFiles("./templates/review.html")
 		data := struct {
 			Title         string
-			Heading       string
-			Message       string
-			Deck          models.Deck
-			Cards         []models.Card
-			Card          models.Card
+			Deck          Deck
+			Cards         []Card
+			Card          Card
 			CardAvailable bool
 		}{
-			Title:         "Learning session for " + deck.Deckname,
-			Heading:       "Create a deck",
-			Message:       "All you need to create a deck is a deck name. Duplicate deck names are allowed.",
+			Title:         "Learning session for " + deck.Name,
 			Deck:          deck,
 			Cards:         cards,
 			Card:          card,
@@ -311,10 +536,10 @@ func LearningHandler(writer http.ResponseWriter, request *http.Request) {
 
 }
 
-func CreateCardHandler(writer http.ResponseWriter, request *http.Request) {
+func (g *GormDB) CreateCardHandler(writer http.ResponseWriter, request *http.Request) {
 	displayForm := func() {
 		tmpl, _ := template.ParseFiles("./templates/create_card.html")
-		decks, err := selectAllDecks(db)
+		decks, err := g.selectAllDecks()
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
 			return
@@ -323,7 +548,7 @@ func CreateCardHandler(writer http.ResponseWriter, request *http.Request) {
 			Title   string
 			Heading string
 			Message string
-			Decks   []models.Deck
+			Decks   []Deck
 		}{
 			Title:   "Card creation",
 			Heading: "Create a card",
@@ -351,7 +576,13 @@ func CreateCardHandler(writer http.ResponseWriter, request *http.Request) {
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
 		}
 
-		insertCard(db, deckID, question, answer, string(t))
+		var card Card
+		card.DeckID = uint(deckID)
+		card.Question = question
+		card.Answer = answer
+		card.CardCreated = string(t)
+		card.ReviewDueDate = string(t) //necessary to avoid a critical error when determing which card to show first for cards that have never been answered before.
+		g.createCard(card)
 
 		fmt.Fprintf(writer, "<div id='result'>Card with question '%s' and answer '%s' created successfully!</div>", question, answer)
 
@@ -368,17 +599,17 @@ func CreateCardHandler(writer http.ResponseWriter, request *http.Request) {
 
 }
 
-func DecksHandler(writer http.ResponseWriter, request *http.Request) {
+func (g *GormDB) DecksHandler(writer http.ResponseWriter, request *http.Request) {
 	displayDecks := func() {
 		tmpl, _ := template.ParseFiles("./templates/decks.html")
-		decks, err := selectAllDecks(db)
+		decks, err := g.selectAllDecks()
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		data := struct {
 			Title string
-			Decks []models.Deck
+			Decks []Deck
 		}{
 			Title: "List of Decks",
 			Decks: decks,
@@ -392,231 +623,6 @@ func DecksHandler(writer http.ResponseWriter, request *http.Request) {
 	default:
 		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
 	}
-}
-
-// possible values from stage: learning, review
-func createCardsTable(db *sql.DB) error {
-	_, err := db.Exec(`
-                CREATE TABLE IF NOT EXISTS cards (
-                        card_id INTEGER PRIMARY KEY,
-                        deck_id INTEGER,
-                        correct INTEGER DEFAULT 0,
-                        incorrect INTEGER DEFAULT 0,
-                        card_created TEXT DEFAULT "",
-                        last_review_date TEXT DEFAULT "",
-                        stage TEXT DEFAULT "learning",
-                        lapses INTEGER DEFAULT 0,
-                        ease INTEGER DEFAULT 1,
-                        review_due_date TEXT DEFAULT "",
-                        question TEXT,
-                        answer TEXT,
-                        FOREIGN KEY (deck_id) REFERENCES decks(deck_id) ON DELETE CASCADE
-                )
-        `)
-	return err
-}
-
-func createDecksTable(db *sql.DB) error {
-	_, err := db.Exec(`
-                CREATE TABLE IF NOT EXISTS decks (
-                        deck_id INTEGER PRIMARY KEY,
-                        deck_name TEXT
-                )
-        `)
-	return err
-}
-
-func selectAllDecks(db *sql.DB) ([]models.Deck, error) {
-	rows, err := db.Query("SELECT * FROM decks")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var decks []models.Deck
-	for rows.Next() {
-		var deck models.Deck
-		if err := rows.Scan(&deck.DeckID, &deck.Deckname); err != nil {
-			return nil, err
-		}
-		decks = append(decks, deck)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return decks, nil
-}
-
-func selectDeckByID(db *sql.DB, deckID int) (models.Deck, error) {
-	var deck models.Deck
-	err := db.QueryRow("SELECT deck_id, deck_name FROM decks WHERE deck_id = ?", deckID).Scan(&deck.DeckID, &deck.Deckname)
-	if err != nil {
-		return models.Deck{}, err
-	}
-	return deck, nil
-}
-
-func insertDeck(db *sql.DB, deckName string) error {
-	_, err := db.Exec("INSERT INTO decks (deck_name) VALUES (?)", deckName)
-	return err
-}
-
-func deleteDeck(db *sql.DB, deckID int) error {
-	_, err := db.Exec("DELETE FROM decks WHERE deck_id = ?", deckID)
-	return err
-}
-
-func insertCard(db *sql.DB, deckID int64, question, answer, cardCreated string) error {
-	t, err := time.Now().UTC().MarshalText()
-	if err != nil {
-		return err
-	}
-	_, err1 := db.Exec("INSERT INTO cards (deck_id, question, answer, card_created, review_due_date) VALUES (?, ?, ?, ?, ?)", deckID, question, answer, cardCreated, t)
-	return err1
-}
-
-func deleteCard(db *sql.DB, cardID int) error {
-	_, err := db.Exec("DELETE FROM cards WHERE card_id = ?", cardID)
-	return err
-}
-
-func selectCardByCardID(db *sql.DB, cardID int) (models.Card, error) {
-
-	var card models.Card
-	if err := db.QueryRow("SELECT * FROM cards WHERE card_id = ?", cardID).Scan(&card.CardID, &card.DeckID, &card.Correct, &card.Incorrect, &card.CardCreated, &card.LastReviewDate, &card.Stage, &card.Lapses, &card.Ease, &card.ReviewDueDate, &card.Question, &card.Answer); err != nil {
-		return models.Card{}, err
-	}
-	return card, nil
-}
-
-func selectLearningCardsByDeckID(db *sql.DB, deckID int) ([]models.Card, error) {
-	rows, err := db.Query("SELECT * FROM cards WHERE deck_id = ? AND stage = 'learning'", deckID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var cards []models.Card
-	for rows.Next() {
-		var card models.Card
-		if err := rows.Scan(&card.CardID, &card.DeckID, &card.Correct, &card.Incorrect, &card.CardCreated, &card.LastReviewDate, &card.Stage, &card.Lapses, &card.Ease, &card.ReviewDueDate, &card.Question, &card.Answer); err != nil {
-			return nil, err
-		}
-		cards = append(cards, card)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return cards, nil
-}
-
-func selectReviewCardsByDeckID(db *sql.DB, deckID int) ([]models.Card, error) {
-	rows, err := db.Query("SELECT * FROM cards WHERE deck_id = ? AND stage = 'review'", deckID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var cards []models.Card
-	for rows.Next() {
-		var card models.Card
-		if err := rows.Scan(&card.CardID, &card.DeckID, &card.Correct, &card.Incorrect, &card.CardCreated, &card.LastReviewDate, &card.Stage, &card.Lapses, &card.Ease, &card.ReviewDueDate, &card.Question, &card.Answer); err != nil {
-			return nil, err
-		}
-		cards = append(cards, card)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return cards, nil
-}
-
-func selectAllCardsByDeckID(db *sql.DB, deckID int) ([]models.Card, error) {
-	rows, err := db.Query("SELECT * FROM cards WHERE deck_id = ?", deckID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var cards []models.Card
-	for rows.Next() {
-		var card models.Card
-		if err := rows.Scan(&card.CardID, &card.DeckID, &card.Correct, &card.Incorrect, &card.CardCreated, &card.LastReviewDate, &card.Stage, &card.Lapses, &card.Ease, &card.ReviewDueDate, &card.Question, &card.Answer); err != nil {
-			return nil, err
-		}
-		cards = append(cards, card)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return cards, nil
-}
-
-func updateLearningCard(db *sql.DB, cardID int, correctAnswer bool) error {
-	stmt, err := db.Prepare("UPDATE cards SET correct = ?, incorrect = ?, ease = ?, stage = ?, review_due_date = ?, last_review_date = ? WHERE card_id = ?")
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	card, err := selectCardByCardID(db, cardID)
-	if err != nil {
-		return err
-	}
-
-	now, err := time.Now().UTC().MarshalText()
-	if err != nil {
-		return err
-	}
-
-	minuteAfter, err := time.Now().UTC().Add(time.Minute * time.Duration(1)).MarshalText()
-	if err != nil {
-		return err
-	}
-
-	dayAfter, err := time.Now().UTC().Add(time.Hour * time.Duration(24)).MarshalText()
-	if err != nil {
-		return err
-	}
-
-	if correctAnswer {
-		//If ease is more than 1 and card is answered correctly, set stage to review
-		if card.Ease > 1 {
-			_, err = stmt.Exec(card.Correct+1, card.Incorrect, getNextEaseLevel(card.Ease, 1), "review", dayAfter, now, cardID)
-		} else {
-			_, err = stmt.Exec(card.Correct+1, card.Incorrect, getNextEaseLevel(card.Ease, 2), card.Stage, minuteAfter, now, cardID)
-		}
-
-	} else {
-		_, err = stmt.Exec(card.Correct, card.Incorrect+1, 1, card.Stage, minuteAfter, now, cardID)
-	}
-
-	return err
-}
-
-func updateReviewCard(db *sql.DB, cardID int, correctAnswer bool) error {
-	stmt, err := db.Prepare("UPDATE cards SET correct = ?, incorrect = ?, lapses = ?, ease = ?, review_due_date = ?, last_review_date = ? WHERE card_id = ?")
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	card, err := selectCardByCardID(db, cardID)
-	if err != nil {
-		return err
-	}
-	if correctAnswer {
-		_, err = stmt.Exec(card.Correct+1, card.Incorrect, card.Lapses, getNextEaseLevel(card.Ease, 2), createNextReviewDueDate(getNextEaseLevel(card.Ease, 2)), time.Now().UTC().String(), cardID)
-	} else {
-		//increment lapses by 1 if ease is not 1 AND answer is incorrect
-		if card.Ease != 1 {
-			_, err = stmt.Exec(card.Correct, card.Incorrect+1, 1, card.Lapses+1, time.Now().UTC().String(), time.Now().UTC().String(), cardID)
-		} else {
-			_, err = stmt.Exec(card.Correct, card.Incorrect+1, 1, card.Lapses, time.Now().UTC().String(), time.Now().UTC().String(), cardID)
-		}
-	}
-
-	return err
 }
 
 func getNextEaseLevel(currentEase int, growthfactor float64) int {
