@@ -1,9 +1,0 @@
-<div id="content">
-    <h2>This was called from HTMX</h2>
-    <h1>Question: {{.Question}}</h1>
-    <form action="/learning" method="post" hx-post="/learning-answer" hx-target="#content" hx-swap="outerHTML">
-	<input type="hidden" name="card-id" value="{{.ID}}">
-        <label for="answer">Answer</label>
-        <input type="text" name="answer" id="answer" autocomplete="off">
-    </form>
-	</div>

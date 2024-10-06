@@ -100,25 +100,13 @@ func (g *GormDB) selectAllDecks() ([]Deck, error) {
 }
 
 func (g *GormDB) updateLearningCardByID(id uint, correct bool) error {
-	card, err := g.getCardByID(id)
-	if err != nil {
-		return err
-	}
+	card, _ := g.getCardByID(id)
 
-	now, err := time.Now().UTC().MarshalText()
-	if err != nil {
-		return err
-	}
+	now, _ := time.Now().UTC().MarshalText()
 
-	minuteAfter, err := time.Now().UTC().Add(time.Minute * time.Duration(1)).MarshalText()
-	if err != nil {
-		return err
-	}
+	minuteAfter, _ := time.Now().UTC().Add(time.Minute * time.Duration(1)).MarshalText()
 
-	dayAfter, err := time.Now().UTC().Add(time.Hour * time.Duration(24)).MarshalText()
-	if err != nil {
-		return err
-	}
+	dayAfter, _ := time.Now().UTC().Add(time.Hour * time.Duration(24)).MarshalText()
 
 	card.LastReviewDate = string(now)
 	if correct {
@@ -141,20 +129,11 @@ func (g *GormDB) updateLearningCardByID(id uint, correct bool) error {
 }
 
 func (g *GormDB) updateReviewCardByID(id uint, correct bool) error {
-	card, err := g.getCardByID(id)
-	if err != nil {
-		return err
-	}
+	card, _ := g.getCardByID(id)
 
-	now, err := time.Now().UTC().MarshalText()
-	if err != nil {
-		return err
-	}
+	now, _ := time.Now().UTC().MarshalText()
 
-	minuteAfter, err := time.Now().UTC().Add(time.Minute * time.Duration(1)).MarshalText()
-	if err != nil {
-		return err
-	}
+	minuteAfter, _ := time.Now().UTC().Add(time.Minute * time.Duration(1)).MarshalText()
 
 	card.LastReviewDate = string(now)
 	if correct {
@@ -177,30 +156,6 @@ func startMessage() string {
 	return "Starting app..."
 }
 
-func main() {
-	fmt.Println(startMessage())
-
-	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
-	if err != nil {
-		log.Fatal("failed to connect database")
-	}
-
-	gormDB := &GormDB{db: db}
-
-	db.AutoMigrate(&Deck{}, &Card{})
-
-	http.HandleFunc("/", HomeHandler)
-	http.HandleFunc("/create-deck", gormDB.CreateDeckHandler)
-	http.HandleFunc("/decks", gormDB.DecksHandler)
-	http.HandleFunc("/learning/", gormDB.LearningHandler)
-	http.HandleFunc("/deck/", gormDB.DeckHandler)
-	http.HandleFunc("/create-card", gormDB.CreateCardHandler)
-	http.HandleFunc("/learning-answer", gormDB.LearningAnswerHandler)
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
-	fmt.Println("Server starting at :8080")
-	http.ListenAndServe(":8080", nil)
-
-}
 func HomeHandler(writer http.ResponseWriter, request *http.Request) {
 
 	displayHome := func() {
@@ -257,85 +212,6 @@ func (g *GormDB) CreateDeckHandler(writer http.ResponseWriter, request *http.Req
 func IsAnswerCorrectInLowerCase(userAnswer string, databaseAnswer string) bool {
 	return strings.ToLower(userAnswer) == strings.ToLower(databaseAnswer)
 }
-
-func (g *GormDB) LearningAnswerHandler(writer http.ResponseWriter, request *http.Request) {
-
-	processAnswer := func() {
-		err := request.ParseForm()
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		userAnswer := request.FormValue("answer")
-		cardID, err := strconv.ParseInt(request.FormValue("card-id"), 10, 64)
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		card, err := g.getCardByID(uint(cardID))
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		if IsAnswerCorrectInLowerCase(userAnswer, card.Answer) {
-			g.updateLearningCardByID(uint(card.ID), true)
-
-		} else {
-			g.updateLearningCardByID(uint(card.ID), false)
-			// fmt.Fprintf(writer, `<div id='result'>Incorrect answer. Your answer was "%s", correct answer is "%s" </div>`, userAnswer, card.Answer)
-		}
-		cards, err := g.getLearningCardsByDeckID(card.DeckID)
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
-		}
-
-		if len(cards) > 0 {
-			newQuestion, err := getMostDueCard(cards)
-			if err != nil {
-				http.Error(writer, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			tmpl, err := template.ParseFiles("./templates/htmx/learninganswer.html")
-			if err != nil {
-				http.Error(writer, "Error loading template", http.StatusInternalServerError)
-				return
-			}
-
-			err = tmpl.Execute(writer, newQuestion)
-			if err != nil {
-				http.Error(writer, "Error executing template", http.StatusInternalServerError)
-				return
-			}
-		} else {
-			data := struct {
-				Message string
-			}{
-				Message: "No learning cards left for this deck. Create some new cards ",
-			}
-			fmt.Print("no learning cards left")
-			fmt.Print(cards)
-			tmpl, err1 := template.ParseFiles("./templates/htmx/nocards.html")
-			if err1 != nil {
-				fmt.Print(err1)
-				http.Error(writer, fmt.Sprintf("Error loading template %v", err1), http.StatusInternalServerError)
-			}
-
-			tmpl.Execute(writer, data)
-		}
-
-	}
-
-	switch request.Method {
-	case "POST":
-		processAnswer()
-	default:
-		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
-	}
-}
-
 func getMostDueCard(cards []Card) (Card, error) {
 	// timeLayout := "2024-08-30T12:57:22.141705535Z"
 	var mostDueCard Card
@@ -374,24 +250,11 @@ func getMostDueCard(cards []Card) (Card, error) {
 func (g *GormDB) DeckHandler(writer http.ResponseWriter, request *http.Request) {
 	//create string without /learning/ from the URL path
 	IDString := strings.TrimPrefix(request.URL.Path, "/deck/")
-	id, err := strconv.Atoi(IDString)
-	if err != nil {
-		http.Error(writer, "Invalid deck ID", http.StatusBadRequest)
-	}
-	deck, err := g.getDeckByID(uint(id))
-	if err != nil {
-		http.Error(writer, "Couldn't find a deck with that ID in database", http.StatusBadRequest)
-	}
-	cards, err := g.getAllCardsByDeckID(uint(id))
-	if err != nil {
-		http.Error(writer, "Error selecting cards by deck id: "+err.Error(), http.StatusBadRequest)
-	}
+	id, _ := strconv.Atoi(IDString)
+	deck, _ := g.getDeckByID(uint(id))
+	cards, _ := g.getAllCardsByDeckID(uint(id))
 
-	cardsJSON, err := json.Marshal(cards)
-	if err != nil {
-		http.Error(writer, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	cardsJSON, _ := json.Marshal(cards)
 
 	displayCards := func() {
 		tmpl, _ := template.ParseFiles("./templates/deck.html")
@@ -419,27 +282,46 @@ func (g *GormDB) DeckHandler(writer http.ResponseWriter, request *http.Request) 
 func (g *GormDB) LearningHandler(writer http.ResponseWriter, request *http.Request) {
 	//create string without /learning/ from the URL path
 	IDString := strings.TrimPrefix(request.URL.Path, "/learning/")
-	id, err := strconv.Atoi(IDString)
-	if err != nil {
-		http.Error(writer, "Invalid deck ID", http.StatusBadRequest)
-		return
-	}
-	deck, err := g.getDeckByID(uint(id))
-	if err != nil {
-		http.Error(writer, "Couldn't find a deck with that ID in database "+err.Error(), http.StatusNotFound)
-		return
-	}
-	cards, err := g.getLearningCardsByDeckID(deck.ID)
-	if err != nil {
-		http.Error(writer, "Error selecting cards by deck id: "+err.Error(), http.StatusInternalServerError)
-		return
+	id, _ := strconv.Atoi(IDString)
+	deck, _ := g.getDeckByID(uint(id))
+	cards, _ := g.getLearningCardsByDeckID(deck.ID)
+	var cardAvailable bool
+
+	if len(cards) > 0 {
+		cardAvailable = true
+	} else {
+		cardAvailable = false
 	}
 
-	card, err := getMostDueCard(cards)
-	if err != nil {
-		http.Error(writer, "Error selecting card by deck id: "+err.Error(), http.StatusInternalServerError)
-		return
+	displayDeckLearning := func() {
+		tmpl, _ := template.ParseFiles("./templates/learn.html")
+		data := struct {
+			Title         string
+			Deck          Deck
+			CardAvailable bool
+		}{
+			Title:         "Learning session for " + deck.Name,
+			Deck:          deck,
+			CardAvailable: cardAvailable,
+		}
+		tmpl.Execute(writer, data)
 	}
+
+	switch request.Method {
+	case "GET":
+		displayDeckLearning()
+	default:
+		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
+	}
+
+}
+func (g *GormDB) LearningTypingHandler(writer http.ResponseWriter, request *http.Request) {
+	//create string without /learning/ from the URL path
+	IDString := strings.TrimPrefix(request.URL.Path, "/learning-typing/")
+	id, _ := strconv.Atoi(IDString)
+	deck, _ := g.getDeckByID(uint(id))
+	cards, _ := g.getLearningCardsByDeckID(deck.ID)
+	mostDueCard, _ := getMostDueCard(cards)
 
 	var cardAvailable bool
 
@@ -449,12 +331,9 @@ func (g *GormDB) LearningHandler(writer http.ResponseWriter, request *http.Reque
 		cardAvailable = false
 	}
 
+	//GET
 	displayCards := func() {
-		tmpl, _ := template.ParseFiles("./templates/learn.html")
-		if err != nil {
-			http.Error(writer, "Error loading template: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
+		tmpl, _ := template.ParseFiles("./templates/htmx/learning-typing.html")
 		data := struct {
 			Title         string
 			Deck          Deck
@@ -465,15 +344,70 @@ func (g *GormDB) LearningHandler(writer http.ResponseWriter, request *http.Reque
 			Title:         "Learning session for " + deck.Name,
 			Deck:          deck,
 			Cards:         cards,
-			Card:          card,
+			Card:          mostDueCard,
 			CardAvailable: cardAvailable,
 		}
 		tmpl.Execute(writer, data)
 	}
 
+	//POST
+	processAnswer := func() {
+		request.ParseForm()
+
+		userAnswer := request.FormValue("answer")
+		cardID, _ := strconv.ParseInt(request.FormValue("card-id"), 10, 64)
+
+		card, _ := g.getCardByID(uint(cardID))
+
+		if IsAnswerCorrectInLowerCase(userAnswer, card.Answer) {
+			g.updateLearningCardByID(uint(card.ID), true)
+
+		} else {
+			g.updateLearningCardByID(uint(card.ID), false)
+		}
+
+		cards, _ := g.getLearningCardsByDeckID(deck.ID)
+		mostDueCard, _ := getMostDueCard(cards)
+
+		if len(cards) > 0 {
+
+			data := struct {
+				Title         string
+				Deck          Deck
+				Cards         []Card
+				Card          Card
+				CardAvailable bool
+			}{
+				Title:         "Learning session for " + deck.Name,
+				Deck:          deck,
+				Cards:         cards,
+				Card:          mostDueCard,
+				CardAvailable: cardAvailable,
+			}
+
+			tmpl, _ := template.ParseFiles("./templates/htmx/learning-typing.html")
+
+			tmpl.Execute(writer, data)
+
+		} else {
+			data := struct {
+				Message string
+			}{
+				Message: "No learning cards left for this deck. Create some new cards ",
+			}
+			fmt.Print(cards)
+			tmpl, _ := template.ParseFiles("./templates/htmx/nocards.html")
+
+			tmpl.Execute(writer, data)
+		}
+
+	}
+
 	switch request.Method {
 	case "GET":
 		displayCards()
+	case "POST":
+		processAnswer()
 	default:
 		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
 	}
@@ -481,23 +415,11 @@ func (g *GormDB) LearningHandler(writer http.ResponseWriter, request *http.Reque
 }
 func (g *GormDB) ReviewHandler(writer http.ResponseWriter, request *http.Request) {
 	IDString := strings.TrimPrefix(request.URL.Path, "/review/")
-	id, err := strconv.Atoi(IDString)
-	if err != nil {
-		http.Error(writer, "Invalid deck ID", http.StatusBadRequest)
-	}
-	deck, err := g.getDeckByID(uint(id))
-	if err != nil {
-		http.Error(writer, "Couldn't find a deck with that ID in database", http.StatusBadRequest)
-	}
-	cards, err := g.getReviewCardsByDeckID(deck.ID)
-	if err != nil {
-		http.Error(writer, "Error selecting cards by deck id: "+err.Error(), http.StatusBadRequest)
-	}
+	id, _ := strconv.Atoi(IDString)
+	deck, _ := g.getDeckByID(uint(id))
+	cards, _ := g.getReviewCardsByDeckID(deck.ID)
 
-	card, err := getMostDueCard(cards)
-	if err != nil {
-		http.Error(writer, "Error selecting card by deck id: "+err.Error(), http.StatusBadRequest)
-	}
+	card, _ := getMostDueCard(cards)
 
 	var cardAvailable bool
 
@@ -539,11 +461,7 @@ func (g *GormDB) ReviewHandler(writer http.ResponseWriter, request *http.Request
 func (g *GormDB) CreateCardHandler(writer http.ResponseWriter, request *http.Request) {
 	displayForm := func() {
 		tmpl, _ := template.ParseFiles("./templates/create_card.html")
-		decks, err := g.selectAllDecks()
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		decks, _ := g.selectAllDecks()
 		data := struct {
 			Title   string
 			Heading string
@@ -558,23 +476,13 @@ func (g *GormDB) CreateCardHandler(writer http.ResponseWriter, request *http.Req
 		tmpl.Execute(writer, data)
 	}
 	processForm := func() {
-		err := request.ParseForm()
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		deckID, err := strconv.ParseInt(request.FormValue("deck-id"), 10, 64)
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
+		request.ParseForm()
 
-		}
+		deckID, _ := strconv.ParseInt(request.FormValue("deck-id"), 10, 64)
 		question := request.FormValue("question")
 		answer := request.FormValue("answer")
 
-		t, err := time.Now().UTC().MarshalText()
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
-		}
+		t, _ := time.Now().UTC().MarshalText()
 
 		var card Card
 		card.DeckID = uint(deckID)
@@ -602,11 +510,7 @@ func (g *GormDB) CreateCardHandler(writer http.ResponseWriter, request *http.Req
 func (g *GormDB) DecksHandler(writer http.ResponseWriter, request *http.Request) {
 	displayDecks := func() {
 		tmpl, _ := template.ParseFiles("./templates/decks.html")
-		decks, err := g.selectAllDecks()
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		decks, _ := g.selectAllDecks()
 		data := struct {
 			Title string
 			Decks []Deck
@@ -637,9 +541,32 @@ func createNextReviewDueDate(ease int) string {
 	t := time.Now().UTC()
 	t = t.Add(time.Duration(ease) * 24 * time.Hour)
 
-	formattedTime, err := t.MarshalText()
-	if err != nil {
-		fmt.Print(err.Error())
-	}
+	formattedTime, _ := t.MarshalText()
 	return string(formattedTime)
+}
+
+func main() {
+	fmt.Println(startMessage())
+
+	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+	if err != nil {
+		log.Fatal("failed to connect database")
+	}
+
+	gormDB := &GormDB{db: db}
+
+	db.AutoMigrate(&Deck{}, &Card{})
+
+	http.HandleFunc("/", HomeHandler)
+	http.HandleFunc("/create-deck", gormDB.CreateDeckHandler)
+	http.HandleFunc("/decks", gormDB.DecksHandler)
+	http.HandleFunc("/learning/", gormDB.LearningHandler)
+	http.HandleFunc("/deck/", gormDB.DeckHandler)
+	http.HandleFunc("/create-card", gormDB.CreateCardHandler)
+	http.HandleFunc("/learning-typing/", gormDB.LearningTypingHandler)
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
+
+	fmt.Println("Server starting at :8080")
+	http.ListenAndServe(":8080", nil)
+
 }
