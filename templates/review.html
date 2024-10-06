@@ -10,17 +10,17 @@
 </head>
 <body>
     
-    <h1>Learning session for {{.Deck.Name}}</h1>
+    <h1>Review session for {{.Deck.Name}}</h1>
 <div id="content">
 {{if .CardAvailable}}
-    <h3>Choose a learning mode</h3>
-    <button hx-get="/learning-typing/{{.Deck.ID}}" hx-target="#content" hx-swap="outerHTML">Typing</button>
-    <button hx-get="/learning-multiple-choice/{{.Deck.ID}}" hx-target="#content" hx-swap="outerHTML">Multiple Choice</button>
+    <h3>Choose a review mode</h3>
+    <button hx-get="/review-typing/{{.Deck.ID}}" hx-target="#content" hx-swap="outerHTML">Typing</button>
+    <button hx-get="/review-multiple-choice/{{.Deck.ID}}" hx-target="#content" hx-swap="outerHTML">Multiple Choice</button>
     {{end}}
 
 {{if not .CardAvailable}}
 <div id="content">
-    <p>No learning cards available. Create some!</p>
+    <p>No review cards available. Do some learning cards!</p>
 </div>
 {{end}}
 </div>

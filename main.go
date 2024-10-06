@@ -43,6 +43,7 @@ type Database interface {
 	getAllCardsByDeckID(id uint) ([]Card, error)
 	getLearningCardsByDeckID(id uint) ([]Card, error)
 	getReviewCardsByDeckID(id uint) ([]Card, error)
+	getDueReviewCardsByDeckID(id uint) ([]Card, error)
 	getDeckByID(id uint) (Deck, error)
 	selectAllDecks() ([]Deck, error)
 	updateLearningCardByID(card Card) error
@@ -73,7 +74,6 @@ func (g *GormDB) getCardByID(id uint) (Card, error) {
 func (g *GormDB) getAllCardsByDeckID(id uint) ([]Card, error) {
 	var cards []Card
 	err := g.db.Where("deck_id = ?", id).Find(&cards).Error
-	fmt.Print(cards)
 	return cards, err
 }
 func (g *GormDB) getLearningCardsByDeckID(id uint) ([]Card, error) {
@@ -83,7 +83,14 @@ func (g *GormDB) getLearningCardsByDeckID(id uint) ([]Card, error) {
 }
 func (g *GormDB) getReviewCardsByDeckID(id uint) ([]Card, error) {
 	var cards []Card
-	err := g.db.Where("deck_id = ?, stage = ?", id, "review").Find(&cards).Error
+	err := g.db.Where("deck_id = ? AND stage = ?", id, "review").Find(&cards).Error
+	return cards, err
+}
+func (g *GormDB) getDueReviewCardsByDeckID(id uint) ([]Card, error) {
+	now := time.Now().UTC()
+
+	var cards []Card
+	err := g.db.Where("deck_id = ? AND stage = ? AND review_due_date <= ?", id, "review", now).Find(&cards).Error
 	return cards, err
 }
 
@@ -279,42 +286,6 @@ func (g *GormDB) DeckHandler(writer http.ResponseWriter, request *http.Request) 
 
 }
 
-func (g *GormDB) LearningHandler(writer http.ResponseWriter, request *http.Request) {
-	//create string without /learning/ from the URL path
-	IDString := strings.TrimPrefix(request.URL.Path, "/learning/")
-	id, _ := strconv.Atoi(IDString)
-	deck, _ := g.getDeckByID(uint(id))
-	cards, _ := g.getLearningCardsByDeckID(deck.ID)
-	var cardAvailable bool
-
-	if len(cards) > 0 {
-		cardAvailable = true
-	} else {
-		cardAvailable = false
-	}
-
-	displayDeckLearning := func() {
-		tmpl, _ := template.ParseFiles("./templates/learn.html")
-		data := struct {
-			Title         string
-			Deck          Deck
-			CardAvailable bool
-		}{
-			Title:         "Learning session for " + deck.Name,
-			Deck:          deck,
-			CardAvailable: cardAvailable,
-		}
-		tmpl.Execute(writer, data)
-	}
-
-	switch request.Method {
-	case "GET":
-		displayDeckLearning()
-	default:
-		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
-	}
-
-}
 func (g *GormDB) LearningTypingHandler(writer http.ResponseWriter, request *http.Request) {
 	//create string without /learning/ from the URL path
 	IDString := strings.TrimPrefix(request.URL.Path, "/learning-typing/")
@@ -395,7 +366,6 @@ func (g *GormDB) LearningTypingHandler(writer http.ResponseWriter, request *http
 			}{
 				Message: "No learning cards left for this deck. Create some new cards ",
 			}
-			fmt.Print(cards)
 			tmpl, _ := template.ParseFiles("./templates/htmx/nocards.html")
 
 			tmpl.Execute(writer, data)
@@ -413,13 +383,13 @@ func (g *GormDB) LearningTypingHandler(writer http.ResponseWriter, request *http
 	}
 
 }
-func (g *GormDB) ReviewHandler(writer http.ResponseWriter, request *http.Request) {
-	IDString := strings.TrimPrefix(request.URL.Path, "/review/")
+func (g *GormDB) ReviewTypingHandler(writer http.ResponseWriter, request *http.Request) {
+	//create string without /learning/ from the URL path
+	IDString := strings.TrimPrefix(request.URL.Path, "/review-typing/")
 	id, _ := strconv.Atoi(IDString)
 	deck, _ := g.getDeckByID(uint(id))
-	cards, _ := g.getReviewCardsByDeckID(deck.ID)
-
-	card, _ := getMostDueCard(cards)
+	cards, _ := g.getDueReviewCardsByDeckID(deck.ID)
+	mostDueCard, _ := getMostDueCard(cards)
 
 	var cardAvailable bool
 
@@ -429,8 +399,9 @@ func (g *GormDB) ReviewHandler(writer http.ResponseWriter, request *http.Request
 		cardAvailable = false
 	}
 
+	//GET
 	displayCards := func() {
-		tmpl, _ := template.ParseFiles("./templates/review.html")
+		tmpl, _ := template.ParseFiles("./templates/htmx/review-typing.html")
 		data := struct {
 			Title         string
 			Deck          Deck
@@ -438,10 +409,100 @@ func (g *GormDB) ReviewHandler(writer http.ResponseWriter, request *http.Request
 			Card          Card
 			CardAvailable bool
 		}{
-			Title:         "Learning session for " + deck.Name,
+			Title:         "Review session for " + deck.Name,
 			Deck:          deck,
 			Cards:         cards,
-			Card:          card,
+			Card:          mostDueCard,
+			CardAvailable: cardAvailable,
+		}
+		tmpl.Execute(writer, data)
+	}
+
+	//POST
+	processAnswer := func() {
+		request.ParseForm()
+
+		userAnswer := request.FormValue("answer")
+		cardID, _ := strconv.ParseInt(request.FormValue("card-id"), 10, 64)
+
+		card, _ := g.getCardByID(uint(cardID))
+
+		if IsAnswerCorrectInLowerCase(userAnswer, card.Answer) {
+			g.updateReviewCardByID(uint(card.ID), true)
+
+		} else {
+			g.updateReviewCardByID(uint(card.ID), false)
+		}
+
+		cards, _ := g.getDueReviewCardsByDeckID(deck.ID)
+		mostDueCard, _ := getMostDueCard(cards)
+
+		if len(cards) > 0 {
+
+			data := struct {
+				Title         string
+				Deck          Deck
+				Cards         []Card
+				Card          Card
+				CardAvailable bool
+			}{
+				Title:         "Review session for " + deck.Name,
+				Deck:          deck,
+				Cards:         cards,
+				Card:          mostDueCard,
+				CardAvailable: cardAvailable,
+			}
+
+			tmpl, _ := template.ParseFiles("./templates/htmx/review-typing.html")
+
+			tmpl.Execute(writer, data)
+
+		} else {
+			data := struct {
+				Message string
+			}{
+				Message: "No learning cards left for this deck. Create some new cards ",
+			}
+			tmpl, _ := template.ParseFiles("./templates/htmx/nocards.html")
+
+			tmpl.Execute(writer, data)
+		}
+
+	}
+
+	switch request.Method {
+	case "GET":
+		displayCards()
+	case "POST":
+		processAnswer()
+	default:
+		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
+	}
+
+}
+
+func (g *GormDB) LearningHandler(writer http.ResponseWriter, request *http.Request) {
+	IDString := strings.TrimPrefix(request.URL.Path, "/learning/")
+	id, _ := strconv.Atoi(IDString)
+	deck, _ := g.getDeckByID(uint(id))
+	cards, _ := g.getLearningCardsByDeckID(deck.ID)
+	var cardAvailable bool
+
+	if len(cards) > 0 {
+		cardAvailable = true
+	} else {
+		cardAvailable = false
+	}
+
+	displayDeckLearning := func() {
+		tmpl, _ := template.ParseFiles("./templates/learn.html")
+		data := struct {
+			Title         string
+			Deck          Deck
+			CardAvailable bool
+		}{
+			Title:         "Learning session for " + deck.Name,
+			Deck:          deck,
 			CardAvailable: cardAvailable,
 		}
 		tmpl.Execute(writer, data)
@@ -449,9 +510,42 @@ func (g *GormDB) ReviewHandler(writer http.ResponseWriter, request *http.Request
 
 	switch request.Method {
 	case "GET":
-		displayCards()
-	// case "POST":
-	// 	processAnswers()
+		displayDeckLearning()
+	default:
+		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
+	}
+
+}
+func (g *GormDB) ReviewHandler(writer http.ResponseWriter, request *http.Request) {
+	IDString := strings.TrimPrefix(request.URL.Path, "/review/")
+	id, _ := strconv.Atoi(IDString)
+	deck, _ := g.getDeckByID(uint(id))
+	cards, _ := g.getDueReviewCardsByDeckID(deck.ID)
+	var cardAvailable bool
+
+	if len(cards) > 0 {
+		cardAvailable = true
+	} else {
+		cardAvailable = false
+	}
+
+	displayDeckLearning := func() {
+		tmpl, _ := template.ParseFiles("./templates/review.html")
+		data := struct {
+			Title         string
+			Deck          Deck
+			CardAvailable bool
+		}{
+			Title:         "Review session for " + deck.Name,
+			Deck:          deck,
+			CardAvailable: cardAvailable,
+		}
+		tmpl.Execute(writer, data)
+	}
+
+	switch request.Method {
+	case "GET":
+		displayDeckLearning()
 	default:
 		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
 	}
@@ -561,9 +655,11 @@ func main() {
 	http.HandleFunc("/create-deck", gormDB.CreateDeckHandler)
 	http.HandleFunc("/decks", gormDB.DecksHandler)
 	http.HandleFunc("/learning/", gormDB.LearningHandler)
+	http.HandleFunc("/review/", gormDB.ReviewHandler)
 	http.HandleFunc("/deck/", gormDB.DeckHandler)
 	http.HandleFunc("/create-card", gormDB.CreateCardHandler)
 	http.HandleFunc("/learning-typing/", gormDB.LearningTypingHandler)
+	http.HandleFunc("/review-typing/", gormDB.ReviewTypingHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 
 	fmt.Println("Server starting at :8080")
