@@ -1,10 +1,18 @@
 <!-- Draft, TODO implement -->
+{{if .CardAvailable}}
 <div id="content">
     <h1>Question: {{.MostDueCard.Question}}</h1>
     {{range .RandomCards}}
-    <form action="/learning-answer-multiple-choice" method="post" hx-post="/learning-answer" hx-target="#content" hx-swap="outerHTML">
+    <form action="/learning/{{.DeckID}}" method="post" hx-post="/learning-multiple-choice/{{.DeckID}}" hx-target="#content" hx-swap="outerHTML">
 	<input type="hidden" name="card-id" value="{{.ID}}">
     <input type="submit" name="answer" class="answer" autocomplete="off" value="{{.Answer}}">
     {{end}}
     </form>
 </div>
+{{end}}
+
+{{if not .CardAvailable}}
+<div id="content">
+    <p>No learning cards available. Create some!</p>
+</div>
+{{end}}

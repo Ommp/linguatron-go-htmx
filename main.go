@@ -352,15 +352,62 @@ func (g *GormDB) LearningMultipleChoiceHandler(writer http.ResponseWriter, reque
 
 	}
 
-	// processAnswer := func() {
+	processAnswer := func() {
 
-	// }
+		request.ParseForm()
+
+		userAnswer := request.FormValue("answer")
+		cardID, _ := strconv.ParseInt(request.FormValue("card-id"), 10, 64)
+
+		card, _ := g.getCardByID(uint(cardID))
+
+		if IsAnswerCorrectInLowerCase(userAnswer, card.Answer) {
+			g.updateLearningCardByID(uint(card.ID), true)
+
+		} else {
+			g.updateLearningCardByID(uint(card.ID), false)
+		}
+
+		cards, _ := g.getLearningCardsByDeckID(deck.ID)
+		mostDueCard, _ := getMostDueCard(cards)
+
+		var cardAvailable bool
+
+		randomCards, _ := g.getRandomCardsByDeckID(deck.ID, mostDueCard.ID)
+		randomCards = append(randomCards, mostDueCard)
+		rand.Shuffle(len(randomCards), func(i, j int) {
+			randomCards[i], randomCards[j] = randomCards[j], randomCards[i]
+		})
+
+		if len(randomCards) > 3 && mostDueCard.ID != 0 {
+			cardAvailable = true
+		} else {
+			cardAvailable = false
+		}
+		tmpl, _ := template.ParseFiles("./templates/htmx/learning-multiple-choice.html", "./templates/navbar.html")
+		data := struct {
+			Title         string
+			Deck          Deck
+			RandomCards   []Card
+			MostDueCard   Card
+			CardAvailable bool
+		}{
+			Title:         "Deck: " + deck.Name,
+			Deck:          deck,
+			RandomCards:   randomCards,
+			MostDueCard:   mostDueCard,
+			CardAvailable: cardAvailable,
+		}
+
+		tmpl.Execute(writer, data)
+
+	}
 
 	switch request.Method {
 	case "GET":
 		displayLearning()
-		// case "POST":
-		// 	processAnswer()
+	case "POST":
+		processAnswer()
 	}
 }
 
