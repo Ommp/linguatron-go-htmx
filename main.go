@@ -166,7 +166,7 @@ func startMessage() string {
 func HomeHandler(writer http.ResponseWriter, request *http.Request) {
 
 	displayHome := func() {
-		tmpl, _ := template.ParseFiles("./templates/index.html")
+		tmpl, _ := template.ParseFiles("./templates/index.html", "./templates/navbar.html")
 		tmpl.Execute(writer, nil)
 	}
 
@@ -180,7 +180,7 @@ func HomeHandler(writer http.ResponseWriter, request *http.Request) {
 
 func (g *GormDB) CreateDeckHandler(writer http.ResponseWriter, request *http.Request) {
 	displayForm := func() {
-		tmpl, _ := template.ParseFiles("./templates/create_deck.html")
+		tmpl, _ := template.ParseFiles("./templates/create_deck.html", "./templates/navbar.html")
 		data := struct {
 			Title   string
 			Heading string
@@ -264,7 +264,7 @@ func (g *GormDB) DeckHandler(writer http.ResponseWriter, request *http.Request) 
 	cardsJSON, _ := json.Marshal(cards)
 
 	displayCards := func() {
-		tmpl, _ := template.ParseFiles("./templates/deck.html")
+		tmpl, _ := template.ParseFiles("./templates/deck.html", "./templates/navbar.html")
 		data := struct {
 			Title string
 			Deck  Deck
@@ -304,7 +304,7 @@ func (g *GormDB) LearningTypingHandler(writer http.ResponseWriter, request *http
 
 	//GET
 	displayCards := func() {
-		tmpl, _ := template.ParseFiles("./templates/htmx/learning-typing.html")
+		tmpl, _ := template.ParseFiles("./templates/htmx/learning-typing.html", "./templates/navbar.html")
 		data := struct {
 			Title         string
 			Deck          Deck
@@ -495,7 +495,7 @@ func (g *GormDB) LearningHandler(writer http.ResponseWriter, request *http.Reque
 	}
 
 	displayDeckLearning := func() {
-		tmpl, _ := template.ParseFiles("./templates/learn.html")
+		tmpl, _ := template.ParseFiles("./templates/learn.html", "./templates/navbar.html")
 		data := struct {
 			Title         string
 			Deck          Deck
@@ -530,7 +530,7 @@ func (g *GormDB) ReviewHandler(writer http.ResponseWriter, request *http.Request
 	}
 
 	displayDeckLearning := func() {
-		tmpl, _ := template.ParseFiles("./templates/review.html")
+		tmpl, _ := template.ParseFiles("./templates/review.html", "./templates/navbar.html")
 		data := struct {
 			Title         string
 			Deck          Deck
@@ -554,7 +554,7 @@ func (g *GormDB) ReviewHandler(writer http.ResponseWriter, request *http.Request
 
 func (g *GormDB) CreateCardHandler(writer http.ResponseWriter, request *http.Request) {
 	displayForm := func() {
-		tmpl, _ := template.ParseFiles("./templates/create_card.html")
+		tmpl, _ := template.ParseFiles("./templates/create_card.html", "./templates/navbar.html")
 		decks, _ := g.selectAllDecks()
 		data := struct {
 			Title   string
@@ -603,7 +603,7 @@ func (g *GormDB) CreateCardHandler(writer http.ResponseWriter, request *http.Req
 
 func (g *GormDB) DecksHandler(writer http.ResponseWriter, request *http.Request) {
 	displayDecks := func() {
-		tmpl, _ := template.ParseFiles("./templates/decks.html")
+		tmpl, _ := template.ParseFiles("./templates/decks.html", "./templates/navbar.html")
 		decks, _ := g.selectAllDecks()
 		data := struct {
 			Title string

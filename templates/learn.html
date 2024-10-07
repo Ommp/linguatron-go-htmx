@@ -10,6 +10,8 @@
 </head>
 <body>
     
+    {{template "navbar.html"}}
+    <main>
     <h1>Learning session for {{.Deck.Name}}</h1>
 <div id="content">
 {{if .CardAvailable}}
@@ -24,6 +26,6 @@
 </div>
 {{end}}
 </div>
-
+</main>
 </body>
 </html>

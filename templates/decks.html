@@ -5,9 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}}</title>
      <script src="../static/htmx.min.js"></script>
+     <link rel="stylesheet" href="../static/style.css">
 </head>
 <body>
-
+    {{template "navbar.html"}}
+<main>
     <h1>Decks</h1>
     <h3><a href="/create-deck">Create a deck</a></h3>
     <div id="decks">
@@ -16,6 +18,6 @@
  {{end}}
     </div>
 
-
+</main>
 </body>
 </html>

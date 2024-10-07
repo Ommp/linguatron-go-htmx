@@ -1,5 +1,4 @@
-html, body {
-    height: 100%;
+main {
     margin: 0;
     display: flex;
     justify-content: center;
@@ -9,4 +8,30 @@ html, body {
 
 #answer{
     background-color: lightgray;
+}
+
+
+.navbar {
+    background-color: #333;
+    padding: 10px;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    flex-direction: row;
+}
+
+.navbar-item {
+    margin: 0 15px;
+}
+
+.navbar-link {
+    text-decoration: none;
+    color: white;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+.navbar-link:hover {
+    color: #ffdd57;
 }

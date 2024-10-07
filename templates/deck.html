@@ -9,6 +9,8 @@
      <link rel="stylesheet" href="../static/style.css">
 </head>
 <body>
+    {{template "navbar.html"}}
+    <main>
     <h1>{{.Deck.Name}}</h1>
 
     <a href="/learning/{{.Deck.ID}}">Learn</a>
@@ -25,7 +27,7 @@
     </template>
 </div>
 
-
+</main>
     
 </body>
 </html>

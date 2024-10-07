@@ -5,8 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}}</title>
      <script src="../static/htmx.min.js"></script>
+     <link rel="stylesheet" href="../static/style.css">
+
 </head>
 <body>
+    {{template "navbar.html"}}
+    <main>
     <h1>{{.Heading}}</h1>
     <p>{{.Message}}</p>
     <form action="/create-card" method="post" hx-post="/create-card" hx-target="#result" hx-swap="outerHTML">
@@ -23,5 +27,6 @@
         <button type="submit">Submit</button>
     </form>
     <div id="result"></div>
+</main>
 </body>
 </html>
