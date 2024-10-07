@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/exp/rand"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -41,6 +42,7 @@ type Database interface {
 	createCard(card Card) error
 	getCardByID(id uint) (Card, error)
 	getAllCardsByDeckID(id uint) ([]Card, error)
+	getRandomCardsByDeckID(id uint) ([]Card, error)
 	getLearningCardsByDeckID(id uint) ([]Card, error)
 	getReviewCardsByDeckID(id uint) ([]Card, error)
 	getDueReviewCardsByDeckID(id uint) ([]Card, error)
@@ -76,6 +78,30 @@ func (g *GormDB) getAllCardsByDeckID(id uint) ([]Card, error) {
 	err := g.db.Where("deck_id = ?", id).Find(&cards).Error
 	return cards, err
 }
+
+func (g *GormDB) getRandomCardsByDeckID(deckID uint, cardID uint) ([]Card, error) {
+	var count int64
+	cardCountError := g.db.Model(&Card{}).Where("deck_id = ?", deckID).Count(&count).Error
+	if cardCountError != nil {
+		return nil, cardCountError
+	}
+
+	var limit int
+
+	if count >= 3 && count < 5 {
+		limit = 3
+	} else if count >= 5 {
+		limit = 5
+	} else {
+		limit = 0
+	}
+
+	var cards []Card
+	err := g.db.Where("deck_id = ? AND id != ?", deckID, cardID).Order("RANDOM()").Limit(limit).Find(&cards).Error
+
+	return cards, err
+}
+
 func (g *GormDB) getLearningCardsByDeckID(id uint) ([]Card, error) {
 	var cards []Card
 	err := g.db.Where("deck_id = ? AND stage = ?", id, "learning").Find(&cards).Error
@@ -255,7 +281,6 @@ func getMostDueCard(cards []Card) (Card, error) {
 }
 
 func (g *GormDB) DeckHandler(writer http.ResponseWriter, request *http.Request) {
-	//create string without /learning/ from the URL path
 	IDString := strings.TrimPrefix(request.URL.Path, "/deck/")
 	id, _ := strconv.Atoi(IDString)
 	deck, _ := g.getDeckByID(uint(id))
@@ -284,6 +309,59 @@ func (g *GormDB) DeckHandler(writer http.ResponseWriter, request *http.Request) 
 		http.Error(writer, "Unsupported method", http.StatusMethodNotAllowed)
 	}
 
+}
+
+func (g *GormDB) LearningMultipleChoiceHandler(writer http.ResponseWriter, request *http.Request) {
+
+	IDString := strings.TrimPrefix(request.URL.Path, "/learning-multiple-choice/")
+	id, _ := strconv.Atoi(IDString)
+	deck, _ := g.getDeckByID(uint(id))
+
+	displayLearning := func() {
+		cards, _ := g.getLearningCardsByDeckID(deck.ID)
+		mostDueCard, _ := getMostDueCard(cards)
+		var cardAvailable bool
+
+		randomCards, _ := g.getRandomCardsByDeckID(deck.ID, mostDueCard.ID)
+		randomCards = append(randomCards, mostDueCard)
+		rand.Shuffle(len(randomCards), func(i, j int) {
+			randomCards[i], randomCards[j] = randomCards[j], randomCards[i]
+		})
+
+		if len(randomCards) > 3 {
+			cardAvailable = true
+		} else {
+			cardAvailable = false
+		}
+		tmpl, _ := template.ParseFiles("./templates/htmx/learning-multiple-choice.html", "./templates/navbar.html")
+		data := struct {
+			Title         string
+			Deck          Deck
+			RandomCards   []Card
+			MostDueCard   Card
+			CardAvailable bool
+		}{
+			Title:         "Deck: " + deck.Name,
+			Deck:          deck,
+			RandomCards:   randomCards,
+			MostDueCard:   mostDueCard,
+			CardAvailable: cardAvailable,
+		}
+
+		tmpl.Execute(writer, data)
+
+	}
+
+	// processAnswer := func() {
+
+	// }
+
+	switch request.Method {
+	case "GET":
+		displayLearning()
+		// case "POST":
+		// 	processAnswer()
+	}
 }
 
 func (g *GormDB) LearningTypingHandler(writer http.ResponseWriter, request *http.Request) {
@@ -659,6 +737,7 @@ func main() {
 	http.HandleFunc("/deck/", gormDB.DeckHandler)
 	http.HandleFunc("/create-card", gormDB.CreateCardHandler)
 	http.HandleFunc("/learning-typing/", gormDB.LearningTypingHandler)
+	http.HandleFunc("/learning-multiple-choice/", gormDB.LearningMultipleChoiceHandler)
 	http.HandleFunc("/review-typing/", gormDB.ReviewTypingHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 

@@ -1,7 +1,7 @@
 <!-- Draft, TODO implement -->
 <div id="content">
-    <h1>Question: {{.Question}}</h1>
-    {{range .Cards}}
+    <h1>Question: {{.MostDueCard.Question}}</h1>
+    {{range .RandomCards}}
     <form action="/learning-answer-multiple-choice" method="post" hx-post="/learning-answer" hx-target="#content" hx-swap="outerHTML">
 	<input type="hidden" name="card-id" value="{{.ID}}">
     <input type="submit" name="answer" class="answer" autocomplete="off" value="{{.Answer}}">
