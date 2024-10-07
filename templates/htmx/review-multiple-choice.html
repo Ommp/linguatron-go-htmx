@@ -1,0 +1,17 @@
+{{if .CardAvailable}}
+<div id="content">
+    <h1>Question: {{.MostDueCard.Question}}</h1>
+    {{range .RandomCards}}
+    <form action="/review/{{.DeckID}}" method="post" hx-post="/review-multiple-choice/{{.DeckID}}" hx-target="#content" hx-swap="outerHTML">
+    <input type="hidden" name="card-id" value="{{$.MostDueCard.ID}}">
+    <input type="submit" name="answer" class="answer" autocomplete="off" value="{{.Answer}}">
+</form>
+{{end}}
+</div>
+{{end}}
+
+{{if not .CardAvailable}}
+<div id="content">
+    <p>No review cards available. Do some learning cards!</p>
+</div>
+{{end}}

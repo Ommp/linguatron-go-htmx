@@ -411,6 +411,106 @@ func (g *GormDB) LearningMultipleChoiceHandler(writer http.ResponseWriter, reque
 	}
 }
 
+func (g *GormDB) ReviewMultipleChoiceHandler(writer http.ResponseWriter, request *http.Request) {
+
+	IDString := strings.TrimPrefix(request.URL.Path, "/review-multiple-choice/")
+	id, _ := strconv.Atoi(IDString)
+	deck, _ := g.getDeckByID(uint(id))
+
+	displayReview := func() {
+		cards, _ := g.getDueReviewCardsByDeckID(deck.ID)
+		mostDueCard, _ := getMostDueCard(cards)
+		var cardAvailable bool
+
+		randomCards, _ := g.getRandomCardsByDeckID(deck.ID, mostDueCard.ID)
+		randomCards = append(randomCards, mostDueCard)
+		rand.Shuffle(len(randomCards), func(i, j int) {
+			randomCards[i], randomCards[j] = randomCards[j], randomCards[i]
+		})
+
+		if len(randomCards) > 3 {
+			cardAvailable = true
+		} else {
+			cardAvailable = false
+		}
+		tmpl, _ := template.ParseFiles("./templates/htmx/review-multiple-choice.html", "./templates/navbar.html")
+		data := struct {
+			Title         string
+			Deck          Deck
+			RandomCards   []Card
+			MostDueCard   Card
+			CardAvailable bool
+		}{
+			Title:         "Deck: " + deck.Name,
+			Deck:          deck,
+			RandomCards:   randomCards,
+			MostDueCard:   mostDueCard,
+			CardAvailable: cardAvailable,
+		}
+
+		tmpl.Execute(writer, data)
+
+	}
+
+	processAnswer := func() {
+
+		request.ParseForm()
+
+		userAnswer := request.FormValue("answer")
+		cardID, _ := strconv.ParseInt(request.FormValue("card-id"), 10, 64)
+
+		card, _ := g.getCardByID(uint(cardID))
+
+		if IsAnswerCorrectInLowerCase(userAnswer, card.Answer) {
+			g.updateReviewCardByID(uint(card.ID), true)
+
+		} else {
+			g.updateReviewCardByID(uint(card.ID), false)
+		}
+
+		cards, _ := g.getDueReviewCardsByDeckID(deck.ID)
+		mostDueCard, _ := getMostDueCard(cards)
+
+		var cardAvailable bool
+
+		randomCards, _ := g.getRandomCardsByDeckID(deck.ID, mostDueCard.ID)
+		randomCards = append(randomCards, mostDueCard)
+		rand.Shuffle(len(randomCards), func(i, j int) {
+			randomCards[i], randomCards[j] = randomCards[j], randomCards[i]
+		})
+
+		if len(randomCards) > 3 && mostDueCard.ID != 0 {
+			cardAvailable = true
+		} else {
+			cardAvailable = false
+		}
+		tmpl, _ := template.ParseFiles("./templates/htmx/review-multiple-choice.html", "./templates/navbar.html")
+		data := struct {
+			Title         string
+			Deck          Deck
+			RandomCards   []Card
+			MostDueCard   Card
+			CardAvailable bool
+		}{
+			Title:         "Deck: " + deck.Name,
+			Deck:          deck,
+			RandomCards:   randomCards,
+			MostDueCard:   mostDueCard,
+			CardAvailable: cardAvailable,
+		}
+
+		tmpl.Execute(writer, data)
+
+	}
+
+	switch request.Method {
+	case "GET":
+		displayReview()
+	case "POST":
+		processAnswer()
+	}
+}
+
 func (g *GormDB) LearningTypingHandler(writer http.ResponseWriter, request *http.Request) {
 	//create string without /learning/ from the URL path
 	IDString := strings.TrimPrefix(request.URL.Path, "/learning-typing/")
@@ -785,6 +885,7 @@ func main() {
 	http.HandleFunc("/create-card", gormDB.CreateCardHandler)
 	http.HandleFunc("/learning-typing/", gormDB.LearningTypingHandler)
 	http.HandleFunc("/learning-multiple-choice/", gormDB.LearningMultipleChoiceHandler)
+	http.HandleFunc("/review-multiple-choice/", gormDB.ReviewMultipleChoiceHandler)
 	http.HandleFunc("/review-typing/", gormDB.ReviewTypingHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 
