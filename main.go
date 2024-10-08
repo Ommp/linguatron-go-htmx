@@ -668,40 +668,55 @@ func (g *GormDB) ReviewTypingHandler(writer http.ResponseWriter, request *http.R
 		if IsAnswerCorrectInLowerCase(userAnswer, card.Answer) {
 			g.updateReviewCardByID(uint(card.ID), true)
 
+			cards, _ := g.getDueReviewCardsByDeckID(deck.ID)
+			mostDueCard, _ := getMostDueCard(cards)
+
+			if len(cards) > 0 {
+
+				data := struct {
+					Title         string
+					Deck          Deck
+					Cards         []Card
+					Card          Card
+					CardAvailable bool
+				}{
+					Title:         "Review session for " + deck.Name,
+					Deck:          deck,
+					Cards:         cards,
+					Card:          mostDueCard,
+					CardAvailable: cardAvailable,
+				}
+
+				tmpl, _ := template.ParseFiles("./templates/htmx/review-typing.html")
+
+				tmpl.Execute(writer, data)
+
+			} else {
+				data := struct {
+					Message string
+				}{
+					Message: "No review cards left for this deck. Do some learning cards.",
+				}
+				tmpl, _ := template.ParseFiles("./templates/htmx/nocards.html")
+
+				tmpl.Execute(writer, data)
+			}
+
 		} else {
 			g.updateReviewCardByID(uint(card.ID), false)
-		}
-
-		cards, _ := g.getDueReviewCardsByDeckID(deck.ID)
-		mostDueCard, _ := getMostDueCard(cards)
-
-		if len(cards) > 0 {
 
 			data := struct {
-				Title         string
-				Deck          Deck
-				Cards         []Card
-				Card          Card
-				CardAvailable bool
+				Question      string
+				UserAnswer    string
+				CorrectAnswer string
+				Route         string
 			}{
-				Title:         "Review session for " + deck.Name,
-				Deck:          deck,
-				Cards:         cards,
-				Card:          mostDueCard,
-				CardAvailable: cardAvailable,
+				Question:      card.Question,
+				UserAnswer:    userAnswer,
+				CorrectAnswer: card.Answer,
+				Route:         "/review-typing/" + IDString,
 			}
-
-			tmpl, _ := template.ParseFiles("./templates/htmx/review-typing.html")
-
-			tmpl.Execute(writer, data)
-
-		} else {
-			data := struct {
-				Message string
-			}{
-				Message: "No learning cards left for this deck. Create some new cards ",
-			}
-			tmpl, _ := template.ParseFiles("./templates/htmx/nocards.html")
+			tmpl, _ := template.ParseFiles("./templates/htmx/wrong-answer.html")
 
 			tmpl.Execute(writer, data)
 		}
