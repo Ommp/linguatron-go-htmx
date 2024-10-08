@@ -364,42 +364,57 @@ func (g *GormDB) LearningMultipleChoiceHandler(writer http.ResponseWriter, reque
 		if IsAnswerCorrectInLowerCase(userAnswer, card.Answer) {
 			g.updateLearningCardByID(uint(card.ID), true)
 
+			cards, _ := g.getLearningCardsByDeckID(deck.ID)
+			mostDueCard, _ := getMostDueCard(cards)
+
+			var cardAvailable bool
+
+			randomCards, _ := g.getRandomCardsByDeckID(deck.ID, mostDueCard.ID)
+			randomCards = append(randomCards, mostDueCard)
+			rand.Shuffle(len(randomCards), func(i, j int) {
+				randomCards[i], randomCards[j] = randomCards[j], randomCards[i]
+			})
+
+			if len(randomCards) > 3 && mostDueCard.ID != 0 {
+				cardAvailable = true
+			} else {
+				cardAvailable = false
+			}
+			tmpl, _ := template.ParseFiles("./templates/htmx/learning-multiple-choice.html", "./templates/navbar.html")
+			data := struct {
+				Title         string
+				Deck          Deck
+				RandomCards   []Card
+				MostDueCard   Card
+				CardAvailable bool
+			}{
+				Title:         "Deck: " + deck.Name,
+				Deck:          deck,
+				RandomCards:   randomCards,
+				MostDueCard:   mostDueCard,
+				CardAvailable: cardAvailable,
+			}
+
+			tmpl.Execute(writer, data)
+
 		} else {
 			g.updateLearningCardByID(uint(card.ID), false)
+
+			data := struct {
+				Question      string
+				UserAnswer    string
+				CorrectAnswer string
+				Route         string
+			}{
+				Question:      card.Question,
+				UserAnswer:    userAnswer,
+				CorrectAnswer: card.Answer,
+				Route:         "/learning-multiple-choice/" + IDString,
+			}
+			tmpl, _ := template.ParseFiles("./templates/htmx/wrong-answer.html")
+
+			tmpl.Execute(writer, data)
 		}
-
-		cards, _ := g.getLearningCardsByDeckID(deck.ID)
-		mostDueCard, _ := getMostDueCard(cards)
-
-		var cardAvailable bool
-
-		randomCards, _ := g.getRandomCardsByDeckID(deck.ID, mostDueCard.ID)
-		randomCards = append(randomCards, mostDueCard)
-		rand.Shuffle(len(randomCards), func(i, j int) {
-			randomCards[i], randomCards[j] = randomCards[j], randomCards[i]
-		})
-
-		if len(randomCards) > 3 && mostDueCard.ID != 0 {
-			cardAvailable = true
-		} else {
-			cardAvailable = false
-		}
-		tmpl, _ := template.ParseFiles("./templates/htmx/learning-multiple-choice.html", "./templates/navbar.html")
-		data := struct {
-			Title         string
-			Deck          Deck
-			RandomCards   []Card
-			MostDueCard   Card
-			CardAvailable bool
-		}{
-			Title:         "Deck: " + deck.Name,
-			Deck:          deck,
-			RandomCards:   randomCards,
-			MostDueCard:   mostDueCard,
-			CardAvailable: cardAvailable,
-		}
-
-		tmpl.Execute(writer, data)
 
 	}
 
@@ -464,43 +479,57 @@ func (g *GormDB) ReviewMultipleChoiceHandler(writer http.ResponseWriter, request
 		if IsAnswerCorrectInLowerCase(userAnswer, card.Answer) {
 			g.updateReviewCardByID(uint(card.ID), true)
 
+			cards, _ := g.getDueReviewCardsByDeckID(deck.ID)
+			mostDueCard, _ := getMostDueCard(cards)
+
+			var cardAvailable bool
+
+			randomCards, _ := g.getRandomCardsByDeckID(deck.ID, mostDueCard.ID)
+			randomCards = append(randomCards, mostDueCard)
+			rand.Shuffle(len(randomCards), func(i, j int) {
+				randomCards[i], randomCards[j] = randomCards[j], randomCards[i]
+			})
+
+			if len(randomCards) > 3 && mostDueCard.ID != 0 {
+				cardAvailable = true
+			} else {
+				cardAvailable = false
+			}
+			tmpl, _ := template.ParseFiles("./templates/htmx/review-multiple-choice.html", "./templates/navbar.html")
+			data := struct {
+				Title         string
+				Deck          Deck
+				RandomCards   []Card
+				MostDueCard   Card
+				CardAvailable bool
+			}{
+				Title:         "Deck: " + deck.Name,
+				Deck:          deck,
+				RandomCards:   randomCards,
+				MostDueCard:   mostDueCard,
+				CardAvailable: cardAvailable,
+			}
+
+			tmpl.Execute(writer, data)
+
 		} else {
 			g.updateReviewCardByID(uint(card.ID), false)
+
+			data := struct {
+				Question      string
+				UserAnswer    string
+				CorrectAnswer string
+				Route         string
+			}{
+				Question:      card.Question,
+				UserAnswer:    userAnswer,
+				CorrectAnswer: card.Answer,
+				Route:         "/review-multiple-choice/" + IDString,
+			}
+			tmpl, _ := template.ParseFiles("./templates/htmx/wrong-answer.html")
+
+			tmpl.Execute(writer, data)
 		}
-
-		cards, _ := g.getDueReviewCardsByDeckID(deck.ID)
-		mostDueCard, _ := getMostDueCard(cards)
-
-		var cardAvailable bool
-
-		randomCards, _ := g.getRandomCardsByDeckID(deck.ID, mostDueCard.ID)
-		randomCards = append(randomCards, mostDueCard)
-		rand.Shuffle(len(randomCards), func(i, j int) {
-			randomCards[i], randomCards[j] = randomCards[j], randomCards[i]
-		})
-
-		if len(randomCards) > 3 && mostDueCard.ID != 0 {
-			cardAvailable = true
-		} else {
-			cardAvailable = false
-		}
-		tmpl, _ := template.ParseFiles("./templates/htmx/review-multiple-choice.html", "./templates/navbar.html")
-		data := struct {
-			Title         string
-			Deck          Deck
-			RandomCards   []Card
-			MostDueCard   Card
-			CardAvailable bool
-		}{
-			Title:         "Deck: " + deck.Name,
-			Deck:          deck,
-			RandomCards:   randomCards,
-			MostDueCard:   mostDueCard,
-			CardAvailable: cardAvailable,
-		}
-
-		tmpl.Execute(writer, data)
-
 	}
 
 	switch request.Method {
