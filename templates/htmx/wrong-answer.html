@@ -1,0 +1,6 @@
+<div id="content">
+    <p>Question: {{.Question}}</p>
+    <p>Your answer: {{.UserAnswer}}</p>
+    <p>Correct answer: {{.CorrectAnswer}}</p>
+    <button hx-get="{{.Route}}" hx-target="#content" hx-swap="outerHTML">Next question</button>
+</div>
