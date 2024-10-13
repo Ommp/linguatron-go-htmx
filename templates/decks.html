@@ -11,10 +11,9 @@
     {{template "navbar.html"}}
 <main>
     <h1>Decks</h1>
-    <h3><a href="/create-deck">Create a deck</a></h3>
     <div id="decks">
  {{range .Decks}}
-        <a href="/deck/{{.ID}}"><div>{{.Name}}</div></a>
+ <div class="deck"><a href="/deck/{{.ID}}" >{{.Name}}</a></div>
  {{end}}
     </div>
 

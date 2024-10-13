@@ -135,11 +135,11 @@ func (g *GormDB) selectAllDecks() ([]Deck, error) {
 func (g *GormDB) updateLearningCardByID(id uint, correct bool) error {
 	card, _ := g.getCardByID(id)
 
-	now, _ := time.Now().UTC().MarshalText()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
 
-	minuteAfter, _ := time.Now().UTC().Add(time.Minute * time.Duration(1)).MarshalText()
+	minuteAfter := time.Now().UTC().Add(time.Minute * time.Duration(1)).Format(time.RFC3339Nano)
 
-	dayAfter, _ := time.Now().UTC().Add(time.Hour * time.Duration(24)).MarshalText()
+	dayAfter := time.Now().UTC().Add(time.Hour * time.Duration(24)).Format(time.RFC3339Nano)
 
 	card.LastReviewDate = string(now)
 	if correct {
@@ -164,15 +164,15 @@ func (g *GormDB) updateLearningCardByID(id uint, correct bool) error {
 func (g *GormDB) updateReviewCardByID(id uint, correct bool) error {
 	card, _ := g.getCardByID(id)
 
-	now, _ := time.Now().UTC().MarshalText()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
 
-	minuteAfter, _ := time.Now().UTC().Add(time.Minute * time.Duration(1)).MarshalText()
+	minuteAfter := time.Now().UTC().Add(time.Minute * time.Duration(1)).Format(time.RFC3339Nano)
 
 	card.LastReviewDate = string(now)
 	if correct {
 		card.Correct++
+		card.ReviewDueDate = createNextReviewDueDate(int(card.Ease))
 		card.Ease = uint(getNextEaseLevel(int(card.Ease), 2))
-		card.ReviewDueDate = createNextReviewDueDate(getNextEaseLevel(int(card.Ease), 2))
 	} else {
 		card.Incorrect++
 		card.ReviewDueDate = string(minuteAfter)
@@ -243,7 +243,7 @@ func (g *GormDB) CreateDeckHandler(writer http.ResponseWriter, request *http.Req
 }
 
 func IsAnswerCorrectInLowerCase(userAnswer string, databaseAnswer string) bool {
-	return strings.ToLower(userAnswer) == strings.ToLower(databaseAnswer)
+	return strings.EqualFold(strings.TrimSpace(userAnswer), (strings.TrimSpace(databaseAnswer)))
 }
 func getMostDueCard(cards []Card) (Card, error) {
 	// timeLayout := "2024-08-30T12:57:22.141705535Z"
@@ -858,7 +858,7 @@ func (g *GormDB) CreateCardHandler(writer http.ResponseWriter, request *http.Req
 		question := request.FormValue("question")
 		answer := request.FormValue("answer")
 
-		t, _ := time.Now().UTC().MarshalText()
+		t := time.Now().UTC().Format(time.RFC3339Nano)
 
 		var card Card
 		card.DeckID = uint(deckID)
@@ -906,8 +906,7 @@ func (g *GormDB) DecksHandler(writer http.ResponseWriter, request *http.Request)
 }
 
 func getNextEaseLevel(currentEase int, growthfactor float64) int {
-	growthFactor := growthfactor
-	nextEase := int(math.Ceil(float64(currentEase) * growthFactor))
+	nextEase := int(math.Ceil(float64(currentEase) * growthfactor))
 
 	return nextEase
 }
@@ -915,9 +914,12 @@ func getNextEaseLevel(currentEase int, growthfactor float64) int {
 func createNextReviewDueDate(ease int) string {
 
 	t := time.Now().UTC()
-	t = t.Add(time.Duration(ease) * 24 * time.Hour)
+	hours := ease * 24
+	duration := time.Duration(hours) * time.Hour
 
-	formattedTime, _ := t.MarshalText()
+	t = t.Add(duration)
+
+	formattedTime := t.Format(time.RFC3339Nano)
 	return string(formattedTime)
 }
 
