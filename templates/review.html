@@ -17,6 +17,7 @@
     <h3>Choose a review mode</h3>
     <button hx-get="/review-typing/{{.Deck.ID}}" hx-target="#content" hx-swap="outerHTML">Typing</button>
     <button hx-get="/review-multiple-choice/{{.Deck.ID}}" hx-target="#content" hx-swap="outerHTML">Multiple Choice</button>
+    <!-- TODO IMPLEMENT <button hx-get="/review-both/{{.Deck.ID}}" hx-target="#content" hx-swap="outerHTML">Both</button> -->
     {{end}}
 
 {{if not .CardAvailable}}

@@ -16,17 +16,18 @@
     <a href="/learning/{{.Deck.ID}}">Learn</a>
     <a href="/review/{{.Deck.ID}}">Review</a>
 
-<!-- HTMX/HTML -->
-    <div x-data="{ cards: {{ .Cards }} }">
-        
-    <template x-for="card in cards">
-        <div>
-            <p x-text="card.Question"></p>
-            <p x-text="card.Answer"></p>
-        </div>
-    </template>
-</div>
 
+    <div class="card-table">
+    {{range .Cards}}
+
+    <div class="card-table-element" id="{{.ID}}">
+            <div>{{.Question}}</div>
+            <div>{{.Answer}}</div>
+            <div>{{.ReviewDueDate}}</div>
+            <div>{{.Stage}}</div>
+    </div>
+{{end}}
+</div>
 </main>
     
 </body>

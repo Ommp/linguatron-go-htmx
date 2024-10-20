@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -246,7 +245,7 @@ func IsAnswerCorrectInLowerCase(userAnswer string, databaseAnswer string) bool {
 	return strings.EqualFold(strings.TrimSpace(userAnswer), (strings.TrimSpace(databaseAnswer)))
 }
 func getMostDueCard(cards []Card) (Card, error) {
-	// timeLayout := "2024-08-30T12:57:22.141705535Z"
+
 	var mostDueCard Card
 	if len(cards) > 0 {
 		mostDueCard = cards[0]
@@ -286,18 +285,16 @@ func (g *GormDB) DeckHandler(writer http.ResponseWriter, request *http.Request) 
 	deck, _ := g.getDeckByID(uint(id))
 	cards, _ := g.getAllCardsByDeckID(uint(id))
 
-	cardsJSON, _ := json.Marshal(cards)
-
 	displayCards := func() {
 		tmpl, _ := template.ParseFiles("./templates/deck.html", "./templates/navbar.html")
 		data := struct {
 			Title string
 			Deck  Deck
-			Cards template.JS
+			Cards []Card
 		}{
 			Title: "Deck " + deck.Name,
 			Deck:  deck,
-			Cards: template.JS(cardsJSON),
+			Cards: cards,
 		}
 		tmpl.Execute(writer, data)
 	}
@@ -650,6 +647,15 @@ func (g *GormDB) LearningTypingHandler(writer http.ResponseWriter, request *http
 	}
 
 }
+
+func isCardsNotEmpty(cards []Card) bool {
+	if len(cards) > 0 {
+		return true
+	} else {
+		return false
+	}
+}
+
 func (g *GormDB) ReviewTypingHandler(writer http.ResponseWriter, request *http.Request) {
 	//create string without /learning/ from the URL path
 	IDString := strings.TrimPrefix(request.URL.Path, "/review-typing/")
@@ -658,14 +664,7 @@ func (g *GormDB) ReviewTypingHandler(writer http.ResponseWriter, request *http.R
 	cards, _ := g.getDueReviewCardsByDeckID(deck.ID)
 	mostDueCard, _ := getMostDueCard(cards)
 
-	var cardAvailable bool
-
-	if len(cards) > 0 {
-		cardAvailable = true
-	} else {
-		cardAvailable = false
-	}
-
+	cardAvailable := isCardsNotEmpty(cards)
 	//GET
 	displayCards := func() {
 		tmpl, _ := template.ParseFiles("./templates/htmx/review-typing.html")
@@ -700,7 +699,9 @@ func (g *GormDB) ReviewTypingHandler(writer http.ResponseWriter, request *http.R
 			cards, _ := g.getDueReviewCardsByDeckID(deck.ID)
 			mostDueCard, _ := getMostDueCard(cards)
 
-			if len(cards) > 0 {
+			cardAvailable := isCardsNotEmpty(cards)
+
+			if cardAvailable {
 
 				data := struct {
 					Title         string
@@ -768,13 +769,8 @@ func (g *GormDB) LearningHandler(writer http.ResponseWriter, request *http.Reque
 	id, _ := strconv.Atoi(IDString)
 	deck, _ := g.getDeckByID(uint(id))
 	cards, _ := g.getLearningCardsByDeckID(deck.ID)
-	var cardAvailable bool
 
-	if len(cards) > 0 {
-		cardAvailable = true
-	} else {
-		cardAvailable = false
-	}
+	cardAvailable := isCardsNotEmpty(cards)
 
 	displayDeckLearning := func() {
 		tmpl, _ := template.ParseFiles("./templates/learn.html", "./templates/navbar.html")
@@ -803,13 +799,8 @@ func (g *GormDB) ReviewHandler(writer http.ResponseWriter, request *http.Request
 	id, _ := strconv.Atoi(IDString)
 	deck, _ := g.getDeckByID(uint(id))
 	cards, _ := g.getDueReviewCardsByDeckID(deck.ID)
-	var cardAvailable bool
 
-	if len(cards) > 0 {
-		cardAvailable = true
-	} else {
-		cardAvailable = false
-	}
+	cardAvailable := isCardsNotEmpty(cards)
 
 	displayDeckLearning := func() {
 		tmpl, _ := template.ParseFiles("./templates/review.html", "./templates/navbar.html")
@@ -865,7 +856,7 @@ func (g *GormDB) CreateCardHandler(writer http.ResponseWriter, request *http.Req
 		card.Question = question
 		card.Answer = answer
 		card.CardCreated = string(t)
-		card.ReviewDueDate = string(t) //necessary to avoid a critical error when determing which card to show first for cards that have never been answered before.
+		card.ReviewDueDate = string(t) //necessary to avoid a critical error when determining which card to show first for cards that have never been answered before.
 		g.createCard(card)
 
 		fmt.Fprintf(writer, "<div id='result'>Card with question '%s' and answer '%s' created successfully!</div>", question, answer)

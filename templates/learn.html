@@ -18,6 +18,7 @@
     <h3>Choose a learning mode</h3>
     <button hx-get="/learning-typing/{{.Deck.ID}}" hx-target="#content" hx-swap="outerHTML">Typing</button>
     <button hx-get="/learning-multiple-choice/{{.Deck.ID}}" hx-target="#content" hx-swap="outerHTML">Multiple Choice</button>
+    <!-- TODO IMPLEMENT <button hx-get="/learning-both/{{.Deck.ID}}" hx-target="#content" hx-swap="outerHTML">Both</button> -->
     {{end}}
 
 {{if not .CardAvailable}}

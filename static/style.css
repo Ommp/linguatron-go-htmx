@@ -66,3 +66,10 @@ a {
 .navbar-link:hover {
     color: #d0aeff;
 }
+
+
+.card-table-element {
+    display: flex;
+    flex-direction: row;
+    gap: 2em;
+}
